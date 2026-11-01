@@ -656,6 +656,10 @@
   min-width: 0;
 }
 
+.sceneCardWrapWide {
+  grid-column: 1 / -1;
+}
+
 .overlayCard {
   --card-accent: #7c3aed;
   padding: 1rem 1.1rem;
@@ -850,6 +854,13 @@
   color: #34d399;
 }
 
+.configureBtnFn {
+  composes: configureBtn;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.65);
+  color: #fbbf24;
+}
+
 /* ── Expandable Drawers (Socials & End Screen Socials) ── */
 .expandSection {
   overflow: hidden;
@@ -873,6 +884,187 @@
   composes: expandContent;
   background: rgba(16, 185, 129, 0.04);
   border-color: rgba(16, 185, 129, 0.18);
+}
+
+.expandContentFn {
+  composes: expandContent;
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.06) 0%, rgba(15, 23, 42, 0.45) 100%);
+  border-color: rgba(251, 191, 36, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.fnModulesHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sectionTitleFn {
+  margin: 0 0 0.25rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #fbbf24;
+  letter-spacing: -0.01em;
+}
+
+.fnModulesDesc {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--sf-text-2);
+  line-height: 1.45;
+  max-width: 720px;
+}
+
+.fnDragModeBtn {
+  composes: actionBtn;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  color: #fde68a;
+  flex-shrink: 0;
+}
+
+.fnDragModeBtn:hover {
+  background: rgba(251, 191, 36, 0.22);
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
+.fnLayerToggleRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--sf-radius-sm);
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid var(--sf-border);
+}
+
+.fnLayerToggleLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--sf-text-2);
+}
+
+.fnLayerPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.fnLayerPill {
+  --mod-color: #38bdf8;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--sf-border);
+  color: var(--sf-text-3);
+  opacity: 0.65;
+  transition: all 0.15s ease;
+}
+
+.fnLayerPill:hover {
+  opacity: 0.9;
+  border-color: var(--sf-border-strong);
+}
+
+.fnLayerPillActive {
+  opacity: 1;
+  background: color-mix(in srgb, var(--mod-color) 14%, rgba(0, 0, 0, 0.3));
+  border: 1px solid color-mix(in srgb, var(--mod-color) 65%, transparent);
+  color: var(--sf-text);
+}
+
+.fnModulesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 0.75rem;
+}
+
+.fnModuleCard {
+  --mod-color: #38bdf8;
+  padding: 0.8rem 0.95rem;
+  border-radius: var(--sf-radius-sm);
+  background: rgba(10, 14, 26, 0.58);
+  border: 1px solid var(--sf-border);
+  border-left: 3px solid var(--mod-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.fnModuleCard:hover {
+  background: rgba(15, 21, 38, 0.78);
+  border-color: color-mix(in srgb, var(--mod-color) 42%, var(--sf-border));
+  border-left-color: var(--mod-color);
+}
+
+.fnModuleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fnModuleTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.fnModuleIcon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.fnModuleTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sf-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fnModuleResBadge {
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.12rem 0.42rem;
+  border-radius: 4px;
+  color: var(--mod-color);
+  background: color-mix(in srgb, var(--mod-color) 12%, rgba(0, 0, 0, 0.3));
+  border: 1px solid color-mix(in srgb, var(--mod-color) 35%, transparent);
+  flex-shrink: 0;
+}
+
+.fnModuleDesc {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--sf-text-2);
+  line-height: 1.42;
+}
+
+.fnModuleFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
 }
 
 .sectionTitle {

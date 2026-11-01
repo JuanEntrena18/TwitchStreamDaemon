@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StreamForge – Fortnite Overlay</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;600;700&display=swap');
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -13,9 +13,10 @@
     --blue:    #00D4FF;
     --yellow:  #FFD700;
     --purple:  #C84BFF;
+    --green:   #00FF88;
     --dark:    #0A0E1A;
-    --panel:   rgba(10, 14, 26, 0.82);
-    --stroke:  rgba(0, 212, 255, 0.35);
+    --panel:   rgba(10, 14, 26, 0.86);
+    --stroke:  rgba(0, 212, 255, 0.38);
   }
 
   html, body {
@@ -23,6 +24,152 @@
     overflow: hidden;
     background: transparent;
     font-family: 'Barlow Condensed', sans-serif;
+    user-select: none;
+  }
+
+  /* ──────────────────────────────────── MODO WIDGET INDEPENDIENTE (?widget=...) */
+  body.widget-standalone {
+    width: 100vw !important;
+    height: 100vh !important;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 8px;
+  }
+  body.widget-standalone #particles,
+  body.widget-standalone .scan-line,
+  body.widget-standalone .corner,
+  body.widget-standalone #edit-toolbar {
+    display: none !important;
+  }
+  body.widget-standalone [data-widget-id] {
+    display: none !important;
+  }
+  body.widget-standalone [data-widget-id].widget-active {
+    display: flex !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    margin: 0 !important;
+  }
+  body.widget-standalone[data-active-widget="info-bar"] {
+    padding: 0;
+    align-items: flex-end;
+  }
+  body.widget-standalone[data-active-widget="info-bar"] #stream-title-bar.widget-active {
+    width: 100vw !important;
+  }
+  body.widget-standalone[data-active-widget="alerts"] {
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  body.widget-standalone[data-active-widget="alerts"] #alert-zone.widget-active {
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+  }
+  body.widget-standalone[data-active-widget="chat"] #fn-chat.widget-active {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    max-height: none;
+  }
+
+  /* Capas ocultas mediante ?hide=a,b */
+  [data-widget-id].widget-hidden {
+    display: none !important;
+  }
+
+  /* ──────────────────────────────────── MODO INTERACTIVO DRAG & DROP (?edit=true) */
+  body.edit-mode {
+    background: radial-gradient(circle at center, rgba(10, 14, 26, 0.45) 0%, rgba(10, 14, 26, 0.82) 100%);
+  }
+  body.edit-mode [data-widget-id] {
+    cursor: grab !important;
+     pointer-events: auto !important;
+    outline: 2px dashed rgba(0, 212, 255, 0.75);
+    outline-offset: 6px;
+    transition: outline-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  body.edit-mode [data-widget-id]:hover {
+    outline-color: var(--yellow);
+    box-shadow: 0 0 24px rgba(0, 212, 255, 0.35);
+  }
+  body.edit-mode [data-widget-id].dragging {
+    cursor: grabbing !important;
+    outline: 2px solid var(--yellow);
+    z-index: 999 !important;
+  }
+  body.edit-mode #alert-zone {
+    min-width: 440px;
+    min-height: 130px;
+    background: rgba(0, 212, 255, 0.06);
+  }
+  body.edit-mode #alert-zone::after {
+    content: '🔔 ZONA DE ALERTAS (ARRASTRAR AQUÍ)';
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--blue);
+    padding: 12px 20px;
+    pointer-events: none;
+  }
+
+  #edit-toolbar {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    background: rgba(10, 14, 26, 0.95);
+    border: 2px solid var(--blue);
+    padding: 8px 18px;
+    clip-path: polygon(2% 0, 100% 0, 98% 100%, 0 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75);
+  }
+  body.edit-mode #edit-toolbar {
+    display: flex;
+  }
+  .edit-toolbar-title {
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    color: var(--blue);
+    text-transform: uppercase;
+  }
+  .edit-btn {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border: 1px solid var(--stroke);
+    background: rgba(0, 212, 255, 0.14);
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .edit-btn:hover {
+    background: var(--blue);
+    color: var(--dark);
+  }
+  .edit-btn.warn {
+    border-color: rgba(255, 215, 0, 0.45);
+    background: rgba(255, 215, 0, 0.14);
+    color: var(--yellow);
+  }
+  .edit-btn.warn:hover {
+    background: var(--yellow);
+    color: var(--dark);
   }
 
   /* ──────────────────────────────────── CANVAS DE PARTÍCULAS */
@@ -32,11 +179,12 @@
     pointer-events: none;
   }
 
-  /* ──────────────────────────────────── HUD ESQUINA SUPERIOR IZQUIERDA */
+  /* ──────────────────────────────────── 1. HUD ESQUINA SUPERIOR IZQUIERDA (stream-stats) */
   #hud {
     position: absolute;
     top: 28px; left: 28px;
     display: flex; flex-direction: column; gap: 10px;
+    z-index: 20;
   }
 
   .stat-row {
@@ -66,7 +214,7 @@
     border-left: none;
     padding: 5px 18px 5px 14px;
     clip-path: polygon(0 0, 100% 0, 100% 75%, 94% 100%, 0 100%);
-    min-width: 120px;
+    min-width: 135px;
     position: relative;
   }
 
@@ -84,27 +232,37 @@
     color: #ffffff;
     line-height: 1.05;
     letter-spacing: 1px;
-    transition: all 0.3s ease;
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.25s ease;
+    display: inline-block;
   }
 
   .stat-value.blue  { color: var(--blue); }
   .stat-value.yellow{ color: var(--yellow); }
   .stat-value.purple{ color: var(--purple); }
+  .stat-value.pop   { transform: scale(1.22); }
 
-  /* ──────────────────────────────────── UPTIME ESQUINA SUPERIOR DERECHA */
-  #uptime-block {
+  /* ──────────────────────────────────── 2. PANEL DERECHO: TIEMPO + TRAYECTORIA (career-stats) */
+  #right-panel {
     position: absolute;
     top: 28px; right: 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    min-width: 220px;
+    z-index: 20;
+  }
+
+  #uptime-block {
     background: var(--panel);
     border: 1px solid var(--stroke);
     padding: 10px 22px;
     clip-path: polygon(6% 0, 100% 0, 100% 80%, 94% 100%, 0 100%, 0 20%);
     text-align: center;
-    min-width: 160px;
   }
 
   .uptime-label {
-    font-size: 10px; font-weight: 600;
+    font-size: 10px; font-weight: 700;
     letter-spacing: 3px; text-transform: uppercase;
     color: var(--blue);
     line-height: 1;
@@ -119,16 +277,183 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* ──────────────────────────────────── TÍTULO STREAM – BARRA INFERIOR */
+  #fn-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .fn-stat-group {
+    background: var(--panel);
+    border: 1px solid var(--stroke);
+    padding: 10px 16px;
+    clip-path: polygon(4% 0, 100% 0, 100% 88%, 95% 100%, 0 100%, 0 12%);
+  }
+
+  .fn-stat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid rgba(0,212,255,0.2);
+  }
+
+  .fn-stat-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--blue);
+  }
+
+  .fn-api-pill {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    background: rgba(0, 212, 255, 0.14);
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    color: var(--blue);
+  }
+  .fn-api-pill.ok {
+    background: rgba(0, 255, 136, 0.14);
+    border-color: rgba(0, 255, 136, 0.45);
+    color: var(--green);
+  }
+
+  .fn-stat-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3px 0;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+
+  .fn-stat-label { color: rgba(255,255,255,0.62); font-weight: 600; text-transform: uppercase; }
+  .fn-stat-value { color: var(--blue); font-weight: 900; font-size: 17px; }
+  .fn-stat-value.yellow { color: var(--yellow); }
+  .fn-stat-value.purple { color: var(--purple); }
+
+  /* ──────────────────────────────────── 3. CHAT BOX (chat) */
+  .fn-chat {
+    position: absolute;
+    bottom: 74px;
+    left: 28px;
+    width: 390px;
+    height: 330px;
+    max-height: 340px;
+    background: var(--panel);
+    border: 1px solid rgba(0,212,255,0.32);
+    clip-path: polygon(2% 0, 100% 0, 100% 94%, 98% 100%, 0 100%, 0 6%);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+    z-index: 20;
+  }
+  .fn-chat.right { left: auto; right: 28px; }
+  .fn-chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--blue);
+    border-bottom: 1px solid rgba(0,212,255,0.2);
+    padding-bottom: 5px;
+  }
+  .fn-chat-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+  .fn-chat-messages {
+    display: flex; flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+    scrollbar-width: none;
+  }
+  .fn-chat-messages::-webkit-scrollbar { display: none; }
+  .fn-chat-msg {
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px;
+    line-height: 1.38;
+    padding: 3px 6px;
+    border-left: 2px solid rgba(0, 212, 255, 0.35);
+    background: rgba(255, 255, 255, 0.025);
+    word-break: break-word;
+    animation: msg-in 0.2s ease-out;
+  }
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .fn-chat-msg .un { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; margin-right: 4px; }
+  .fn-chat-msg .txt { color: rgba(255,255,255,0.88); }
+
+  /* ──────────────────────────────────── 4. ÚLTIMO FOLLOW (recent-follow) */
+  #recent-follow {
+    position: absolute;
+    bottom: 74px; right: 28px;
+    background: var(--panel);
+    border: 1px solid var(--stroke);
+    padding: 10px 18px;
+    clip-path: polygon(4% 0, 100% 0, 100% 82%, 96% 100%, 0 100%, 0 18%);
+    min-width: 245px; max-width: 320px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 20;
+    transition: transform 0.3s ease, border-color 0.3s ease;
+  }
+  #recent-follow.flash {
+    transform: scale(1.06);
+    border-color: var(--yellow);
+  }
+  .rf-icon {
+    width: 36px; height: 36px;
+    background: rgba(0, 212, 255, 0.16);
+    border: 1px solid var(--blue);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--blue);
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .rf-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .rf-label {
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--blue); margin-bottom: 2px;
+  }
+  .rf-name {
+    font-size: 22px; font-weight: 900;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ──────────────────────────────────── 5. BARRA INFERIOR DE INFO DEL DIRECTO (info-bar) */
   #stream-title-bar {
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 60px;
-    background: linear-gradient(90deg, var(--dark) 0%, rgba(10,14,26,0.92) 60%, transparent 100%);
+    background: linear-gradient(90deg, var(--dark) 0%, rgba(10,14,26,0.94) 70%, rgba(10,14,26,0.75) 100%);
     border-top: 2px solid var(--blue);
-    display: flex; align-items: center; gap: 16px;
+    display: flex; align-items: center; gap: 14px;
     padding: 0 32px;
     overflow: hidden;
+    z-index: 20;
   }
 
   #live-badge {
@@ -148,6 +473,21 @@
     50%      { opacity: 0.65; }
   }
 
+  #broadcaster-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    background: rgba(0, 212, 255, 0.12);
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--blue);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
   #game-label {
     font-size: 13px; font-weight: 700;
     color: var(--yellow);
@@ -161,14 +501,13 @@
   #title-text {
     font-family: 'Barlow', sans-serif;
     font-size: 14px; font-weight: 600;
-    color: rgba(255,255,255,0.85);
+    color: rgba(255,255,255,0.9);
     letter-spacing: 0.5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  /* Separador decorativo azul pulsante */
   #title-deco {
     flex: 1;
     height: 1px;
@@ -176,7 +515,7 @@
     margin: 0 16px;
   }
 
-  /* ──────────────────────────────────── ALERTAS */
+  /* ──────────────────────────────────── 6. ALERTAS CENTRALES (alerts) */
   #alert-zone {
     position: absolute;
     top: 50%; left: 50%;
@@ -184,6 +523,7 @@
     display: flex; flex-direction: column; align-items: center;
     gap: 16px;
     pointer-events: none;
+    z-index: 30;
   }
 
   .alert-card {
@@ -197,6 +537,7 @@
                alert-out 0.4s ease-in 4.6s forwards;
     position: relative;
     overflow: hidden;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
   }
 
   .alert-card::before {
@@ -207,11 +548,18 @@
     animation: shimmer 2s 0.4s ease-in-out infinite;
   }
 
-  .alert-card.sub   { border-color: var(--purple); }
-  .alert-card.sub::before { background: linear-gradient(90deg, transparent, rgba(200,75,255,0.1), transparent); }
-  .alert-card.bits  { border-color: var(--yellow); }
-  .alert-card.bits::before { background: linear-gradient(90deg, transparent, rgba(255,215,0,0.1), transparent); }
-  .alert-card.cheer { border-color: var(--yellow); }
+  .alert-card.sub,
+  .alert-card.resub,
+  .alert-card.subgift { border-color: var(--purple); }
+  .alert-card.sub::before,
+  .alert-card.resub::before,
+  .alert-card.subgift::before { background: linear-gradient(90deg, transparent, rgba(200,75,255,0.12), transparent); }
+  .alert-card.bits,
+  .alert-card.cheer,
+  .alert-card.raid { border-color: var(--yellow); }
+  .alert-card.bits::before,
+  .alert-card.cheer::before,
+  .alert-card.raid::before { background: linear-gradient(90deg, transparent, rgba(255,215,0,0.12), transparent); }
 
   @keyframes shimmer {
     0%   { left: -60%; }
@@ -233,9 +581,12 @@
     letter-spacing: 4px; text-transform: uppercase;
     color: var(--blue); margin-bottom: 4px;
   }
-  .alert-card.sub   .alert-type { color: var(--purple); }
-  .alert-card.bits  .alert-type { color: var(--yellow); }
-  .alert-card.cheer .alert-type { color: var(--yellow); }
+  .alert-card.sub .alert-type,
+  .alert-card.resub .alert-type,
+  .alert-card.subgift .alert-type { color: var(--purple); }
+  .alert-card.bits .alert-type,
+  .alert-card.cheer .alert-type,
+  .alert-card.raid .alert-type { color: var(--yellow); }
 
   .alert-user {
     font-size: 36px; font-weight: 900;
@@ -245,43 +596,19 @@
 
   .alert-detail {
     font-size: 15px; font-weight: 600;
-    color: rgba(255,255,255,0.65);
+    color: rgba(255,255,255,0.72);
     margin-top: 6px; letter-spacing: 1px;
   }
 
   .alert-msg {
     font-family: 'Barlow', sans-serif;
     font-size: 13px; font-weight: 400;
-    color: rgba(255,255,255,0.5);
+    color: rgba(255,255,255,0.58);
     margin-top: 4px;
     font-style: italic;
   }
 
-  /* ──────────────────────────────────── RECUADRO ESQUINA INF DERECHA – ÚLTIMO FOLLOW */
-  #recent-follow {
-    position: absolute;
-    bottom: 72px; right: 28px;
-    background: var(--panel);
-    border: 1px solid rgba(0,212,255,0.3);
-    padding: 8px 16px;
-    clip-path: polygon(4% 0, 100% 0, 100% 82%, 96% 100%, 0 100%, 0 18%);
-    min-width: 220px; max-width: 280px;
-    opacity: 0;
-    transition: opacity 0.5s ease;
-  }
-  #recent-follow.visible { opacity: 1; }
-
-  .rf-label {
-    font-size: 10px; font-weight: 700;
-    letter-spacing: 3px; text-transform: uppercase;
-    color: var(--blue); margin-bottom: 2px;
-  }
-  .rf-name {
-    font-size: 22px; font-weight: 900;
-    color: #fff;
-  }
-
-  /* ──────────────────────────────────── ESCANER DE LÍNEA DECORATIVA */
+  /* ──────────────────────────────────── ESCÁNER Y ESQUINAS DECORATIVAS */
   .scan-line {
     position: absolute; left: 0; right: 0; height: 1px;
     background: linear-gradient(90deg, transparent 0%, var(--blue) 50%, transparent 100%);
@@ -294,7 +621,6 @@
     to   { top: 1080px; }
   }
 
-  /* ──────────────────────────────────── CORNER DECORATIONS */
   .corner {
     position: absolute;
     width: 40px; height: 40px;
@@ -306,88 +632,7 @@
   .corner.bl { bottom: 0; left: 0; transform: scaleY(-1); }
   .corner.br { bottom: 60px; right: 0; transform: scale(-1,-1); }
 
-  /* ──────────────────────────────────── FORTNITE STATS */
-  #fn-stats {
-    position: absolute;
-    top: 120px; right: 28px;
-    display: flex; flex-direction: column;
-    gap: 6px;
-    opacity: 0;
-    transition: opacity 0.5s ease;
-  }
-  #fn-stats.visible { opacity: 1; }
-
-  .fn-stat-group {
-    background: var(--panel);
-    border: 1px solid var(--stroke);
-    padding: 8px 16px;
-    clip-path: polygon(4% 0, 100% 0, 100% 82%, 96% 100%, 0 100%, 0 18%);
-    min-width: 180px;
-  }
-
-  .fn-stat-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 2px 0;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
-    letter-spacing: 0.5px;
-  }
-
-  .fn-stat-label { color: rgba(255,255,255,0.55); font-weight: 600; }
-  .fn-stat-value { color: var(--blue); font-weight: 900; font-size: 16px; }
-  .fn-stat-value.yellow { color: var(--yellow); }
-  .fn-stat-value.purple { color: var(--purple); }
-
-  .fn-stat-title {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 10px; font-weight: 700;
-    letter-spacing: 3px; text-transform: uppercase;
-    color: var(--blue);
-    margin-bottom: 4px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid rgba(0,212,255,0.2);
-  }
-
-  /* ──────────────────────────────────── CHAT BOX */
-  .fn-chat {
-    position: absolute;
-    bottom: 72px;
-    width: 380px; max-height: 340px;
-    background: rgba(10,14,26,0.82);
-    border: 1px solid rgba(0,212,255,0.25);
-    clip-path: polygon(2% 0, 100% 0, 100% 94%, 98% 100%, 0 100%, 0 6%);
-    padding: 10px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    overflow: hidden;
-    z-index: 20;
-  }
-  .fn-chat.left  { left: 28px; }
-  .fn-chat.right { right: 28px; }
-  .fn-chat-header {
-    font-size: 10px; font-weight: 700;
-    letter-spacing: 3px; text-transform: uppercase;
-    color: var(--blue); margin-bottom: 4px;
-    border-bottom: 1px solid rgba(0,212,255,0.15);
-    padding-bottom: 4px;
-  }
-  .fn-chat-messages {
-    display: flex; flex-direction: column;
-    gap: 3px;
-    overflow-y: auto;
-    flex: 1;
-  }
-  .fn-chat-msg {
-    font-size: 12px;
-    line-height: 1.4;
-    padding: 2px 0;
-    word-break: break-word;
-  }
-  .fn-chat-msg .un { font-weight: 700; }
-  .fn-chat-msg .txt { color: rgba(255,255,255,0.8); }
-
-  /* ──────────────────────────────────── DEMO BADGE */
+  /* ──────────────────────────────────── DEMO & OFFLINE BADGES */
   #demo-badge {
     position: absolute; top: 28px; left: 50%; transform: translateX(-50%);
     background: rgba(245,158,11,0.15);
@@ -402,7 +647,6 @@
   }
   #demo-badge.show { display: block; }
 
-  /* ──────────────────────────────────── MODO OFFLINE */
   #offline-notice {
     position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
     background: rgba(255,59,59,0.15);
@@ -412,11 +656,19 @@
     letter-spacing: 2px; text-transform: uppercase;
     color: rgba(255,120,120,0.85);
     display: none;
+    z-index: 55;
   }
   #offline-notice.show { display: block; }
 </style>
 </head>
 <body>
+
+<!-- Barra de herramientas del modo interactivo (?edit=true) -->
+<div id="edit-toolbar">
+  <span class="edit-toolbar-title">✋ MODO MOVER ELEMENTOS · FORTNITE OVERLAY</span>
+  <button type="button" class="edit-btn" id="btn-test-alert">🔔 Probar Alerta</button>
+  <button type="button" class="edit-btn warn" id="btn-reset-pos">↺ Resetear Posiciones</button>
+</div>
 
 <!-- Canvas partículas -->
 <canvas id="particles"></canvas>
@@ -450,9 +702,8 @@
   </svg>
 </div>
 
-<!-- HUD Stats – esquina superior izquierda -->
-<div id="hud">
-  <!-- Espectadores -->
+<!-- 1. HUD Stats – esquina superior izquierda (stream-stats) -->
+<div id="hud" data-widget-id="stream-stats">
   <div class="stat-row">
     <div class="stat-icon-wrap">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -461,11 +712,10 @@
     </div>
     <div class="stat-body">
       <div class="stat-label">Viewers</div>
-      <div class="stat-value blue" id="val-viewers">–</div>
+      <div class="stat-value blue" id="val-viewers">0</div>
     </div>
   </div>
 
-  <!-- Seguidores -->
   <div class="stat-row">
     <div class="stat-icon-wrap yellow">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -474,59 +724,75 @@
     </div>
     <div class="stat-body">
       <div class="stat-label">Followers</div>
-      <div class="stat-value yellow" id="val-followers">–</div>
+      <div class="stat-value yellow" id="val-followers">0</div>
     </div>
   </div>
 
-  <!-- Suscriptores -->
   <div class="stat-row">
     <div class="stat-icon-wrap purple">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm4.24 16L12 15.45 7.77 18l1.12-4.81-3.73-3.23 4.92-.42L12 5l1.92 4.53 4.92.42-3.73 3.23L16.23 18z"/>
+        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm4.24 16L12 15.45 7.77 18l1.12-4.81-3.73-3.23 4.92-.42L12 5l1.92 4.53 4.92.42-3.73-3.23L16.23 18z"/>
       </svg>
     </div>
     <div class="stat-body">
       <div class="stat-label">Subs</div>
-      <div class="stat-value purple" id="val-subs">–</div>
+      <div class="stat-value purple" id="val-subs">0</div>
     </div>
   </div>
 </div>
 
-<!-- Uptime – esquina superior derecha -->
-<div id="uptime-block">
-  <div class="uptime-label">En directo</div>
-  <div class="uptime-value" id="val-uptime">00:00:00</div>
-</div>
+<!-- 2. Uptime + Estadísticas de Fortnite – esquina superior derecha (career-stats) -->
+<div id="right-panel" data-widget-id="career-stats">
+  <div id="uptime-block">
+    <div class="uptime-label">En directo</div>
+    <div class="uptime-value" id="val-uptime">00:00:00</div>
+  </div>
 
-<!-- Estadísticas de Fortnite -->
-<div id="fn-stats">
-  <div class="fn-stat-group">
-    <div class="fn-stat-title">📊 Stats</div>
-    <div class="fn-stat-row"><span class="fn-stat-label">Kills</span><span class="fn-stat-value" id="fn-kills">—</span></div>
-    <div class="fn-stat-row"><span class="fn-stat-label">Wins</span><span class="fn-stat-value yellow" id="fn-wins">—</span></div>
-    <div class="fn-stat-row"><span class="fn-stat-label">Partidas</span><span class="fn-stat-value" id="fn-matches">—</span></div>
-    <div class="fn-stat-row"><span class="fn-stat-label">K/D</span><span class="fn-stat-value purple" id="fn-kd">—</span></div>
-    <div class="fn-stat-row"><span class="fn-stat-label">Win Rate</span><span class="fn-stat-value" id="fn-winrate">—</span></div>
+  <div id="fn-stats">
+    <div class="fn-stat-group">
+      <div class="fn-stat-header">
+        <span class="fn-stat-title">📊 Trayectoria</span>
+        <span class="fn-api-pill" id="fn-api-status">API</span>
+      </div>
+      <div class="fn-stat-row"><span class="fn-stat-label">Kills</span><span class="fn-stat-value" id="fn-kills">0</span></div>
+      <div class="fn-stat-row"><span class="fn-stat-label">Wins</span><span class="fn-stat-value yellow" id="fn-wins">0</span></div>
+      <div class="fn-stat-row"><span class="fn-stat-label">Partidas</span><span class="fn-stat-value" id="fn-matches">0</span></div>
+      <div class="fn-stat-row"><span class="fn-stat-label">K/D</span><span class="fn-stat-value purple" id="fn-kd">0.00</span></div>
+      <div class="fn-stat-row"><span class="fn-stat-label">Win Rate</span><span class="fn-stat-value" id="fn-winrate">0.0%</span></div>
+    </div>
   </div>
 </div>
 
-<!-- Último follow – esquina inferior derecha -->
-<div id="recent-follow">
-  <div class="rf-label">Último follow</div>
-  <div class="rf-name" id="last-follow-name">–</div>
+<!-- 3. Chat en vivo – esquina inferior izquierda (chat) -->
+<div class="fn-chat left" id="fn-chat" data-widget-id="chat">
+  <div class="fn-chat-header">
+    <span>💬 Chat de Escuadrón</span>
+    <span class="fn-chat-dot"></span>
+  </div>
+  <div class="fn-chat-messages" id="fn-chat-msgs"></div>
 </div>
 
-<!-- Barra inferior de título -->
-<div id="stream-title-bar">
+<!-- 4. Último follow – esquina inferior derecha (recent-follow) -->
+<div id="recent-follow" data-widget-id="recent-follow">
+  <div class="rf-icon">★</div>
+  <div class="rf-content">
+    <div class="rf-label">Último seguidor</div>
+    <div class="rf-name" id="last-follow-name">Esperando…</div>
+  </div>
+</div>
+
+<!-- 5. Barra inferior de info del directo (info-bar) -->
+<div id="stream-title-bar" data-widget-id="info-bar">
   <div id="live-badge">Live</div>
+  <div id="broadcaster-badge">@<span id="broadcaster-name">Streamer</span></div>
   <div id="game-label">Fortnite</div>
   <div id="title-sep">◆</div>
-    <div id="title-text">Conectando…</div>
+  <div id="title-text">Conectando…</div>
   <div id="title-deco"></div>
 </div>
 
-<!-- Zona de alertas central -->
-<div id="alert-zone"></div>
+<!-- 6. Zona de alertas central (alerts) -->
+<div id="alert-zone" data-widget-id="alerts"></div>
 
 <!-- Aviso offline -->
 <div id="offline-notice">⚡ Sin conexión con StreamForge</div>
@@ -534,32 +800,137 @@
 <!-- Demo badge -->
 <div id="demo-badge">🧪 MODO PRUEBA</div>
 
-<!-- Chat en vivo -->
-<div class="fn-chat left" id="fn-chat">
-  <div class="fn-chat-header">💬 Chat en vivo</div>
-  <div class="fn-chat-messages" id="fn-chat-msgs"></div>
-</div>
-
 <script>
 /* ──────────────────────────────────────────────────────────
    CONFIG (desde URL)
 ────────────────────────────────────────────────────────── */
-const CHANNEL     = new URLSearchParams(location.search).get('channel') || '';
-const DEMO_MODE   = new URLSearchParams(location.search).get('demo') === 'true';
-const BACKEND_URL = new URLSearchParams(location.search).get('backend') || 'http://localhost:3000';
-const EPIC_USER   = new URLSearchParams(location.search).get('epic') || '';
-const STATS_MODE  = new URLSearchParams(location.search).get('mode') || 'overall';
-const LAYOUT      = new URLSearchParams(location.search).get('layout') || 'stats';
+const params      = new URLSearchParams(location.search);
+const CHANNEL     = params.get('channel') || '';
+const DEMO_MODE   = params.get('demo') === 'true';
+const BACKEND_URL = params.get('backend') || 'http://localhost:3000';
+let   EPIC_USER   = params.get('epic') || '';
+let   STATS_MODE  = params.get('mode') || 'overall';
+const LAYOUT      = params.get('layout') || 'stats';
+const WIDGET_ONLY = params.get('widget') || '';
+const HIDE_LAYERS = (params.get('hide') || '').split(',').map(s => s.trim()).filter(Boolean);
+const EDIT_MODE   = params.get('edit') === 'true' || params.get('interactive') === 'true';
+const POS_STORAGE_KEY = `sd_fn_tactical_pos_${CHANNEL || 'default'}`;
+
+document.getElementById('broadcaster-name').textContent = CHANNEL || 'Stream';
 
 /* ──────────────────────────────────────────────────────────
-   ESTADO LOCAL
+   MODO WIDGET INDEPENDIENTE (?widget=...) & FILTRO DE CAPAS (?hide=...)
+────────────────────────────────────────────────────────── */
+(function setupModularView() {
+  if (WIDGET_ONLY) {
+    document.body.classList.add('widget-standalone');
+    document.body.setAttribute('data-active-widget', WIDGET_ONLY);
+    const target = document.querySelector(`[data-widget-id="${WIDGET_ONLY}"]`);
+    if (target) target.classList.add('widget-active');
+    return;
+  }
+
+  HIDE_LAYERS.forEach(layerId => {
+    const el = document.querySelector(`[data-widget-id="${layerId}"]`);
+    if (el) el.classList.add('widget-hidden');
+  });
+})();
+
+/* ──────────────────────────────────────────────────────────
+   POSICIONES GUARDADAS & DRAG AND DROP (?edit=true)
+────────────────────────────────────────────────────────── */
+function loadSavedPositions() {
+  if (WIDGET_ONLY) return;
+  try {
+    const raw = localStorage.getItem(POS_STORAGE_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw);
+    Object.entries(map).forEach(([wid, pos]) => {
+      const el = document.querySelector(`[data-widget-id="${wid}"]`);
+      if (!el || !pos) return;
+      el.style.left = `${pos.left}px`;
+      el.style.top = `${pos.top}px`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      if (wid === 'alerts') el.style.transform = 'none';
+    });
+  } catch {}
+}
+
+function saveWidgetPosition(wid, left, top) {
+  try {
+    const raw = localStorage.getItem(POS_STORAGE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[wid] = { left: Math.round(left), top: Math.round(top) };
+    localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+function initEditMode() {
+  loadSavedPositions();
+  if (!EDIT_MODE || WIDGET_ONLY) return;
+
+  document.body.classList.add('edit-mode');
+
+  document.getElementById('btn-test-alert').addEventListener('click', () => {
+    enqueueAlert({
+      type: 'sub',
+      user: 'CyberCommander',
+      detail: 'Tier 1 · Alerta de Prueba',
+      msg: '¡El módulo de alertas funciona genial!',
+    });
+  });
+
+  document.getElementById('btn-reset-pos').addEventListener('click', () => {
+    localStorage.removeItem(POS_STORAGE_KEY);
+    location.reload();
+  });
+
+  document.querySelectorAll('[data-widget-id]').forEach(el => {
+    let dragging = false;
+    let startX = 0, startY = 0, origLeft = 0, origTop = 0;
+
+    el.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      dragging = true;
+      el.classList.add('dragging');
+      el.setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      origLeft = rect.left;
+      origTop = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      el.style.left = `${origLeft}px`;
+      el.style.top = `${origTop}px`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      if (el.dataset.widgetId === 'alerts') el.style.transform = 'none';
+    });
+
+    el.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      el.style.left = `${origLeft + dx}px`;
+      el.style.top = `${origTop + dy}px`;
+    });
+
+    el.addEventListener('pointerup', e => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      const rect = el.getBoundingClientRect();
+      saveWidgetPosition(el.dataset.widgetId, rect.left, rect.top);
+    });
+  });
+}
+
+/* ──────────────────────────────────────────────────────────
+   ESTADO LOCAL & FORMATTERS
 ────────────────────────────────────────────────────────── */
 let uptimeSeconds = 0;
 let uptimeInterval = null;
 
-/* ──────────────────────────────────────────────────────────
-   FORMATTERS
-────────────────────────────────────────────────────────── */
 function fmtNum(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
@@ -573,19 +944,39 @@ function fmtTime(s) {
   return [h, m, sec].map(v => String(v).padStart(2,'0')).join(':');
 }
 
+function setStatWithPop(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const next = String(val);
+  if (el.textContent !== next) {
+    el.textContent = next;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+    setTimeout(() => el.classList.remove('pop'), 300);
+  }
+}
+
 /* ──────────────────────────────────────────────────────────
    HUD UPDATE
 ────────────────────────────────────────────────────────── */
 function applyHud(data) {
-  document.getElementById('val-viewers').textContent   = fmtNum(data.viewers   ?? 0);
-  document.getElementById('val-followers').textContent = fmtNum(data.followers ?? 0);
-  document.getElementById('val-subs').textContent      = fmtNum(data.subscribers ?? 0);
+  setStatWithPop('val-viewers',   fmtNum(data.viewers     ?? 0));
+  setStatWithPop('val-followers', fmtNum(data.followers   ?? 0));
+  setStatWithPop('val-subs',      fmtNum(data.subscribers ?? 0));
+
+  if (data.channelName || CHANNEL) {
+    document.getElementById('broadcaster-name').textContent = data.channelName || CHANNEL;
+  }
 
   const titleEl = document.getElementById('title-text');
   if (data.streamTitle) titleEl.textContent = data.streamTitle;
   if (data.gameName) {
-    const gl = document.getElementById('game-label');
-    if (data.gameName) gl.textContent = data.gameName;
+    document.getElementById('game-label').textContent = data.gameName;
+  }
+
+  if (data.lastFollower) {
+    document.getElementById('last-follow-name').textContent = data.lastFollower;
   }
 
   if (data.uptimeSeconds != null) {
@@ -606,7 +997,7 @@ function applyHud(data) {
 ────────────────────────────────────────────────────────── */
 const alertQueue = [];
 let alertBusy = false;
-const ALERT_DURATION = 5200; // ms
+const ALERT_DURATION = 5200;
 
 function enqueueAlert(cfg) {
   alertQueue.push(cfg);
@@ -627,12 +1018,13 @@ function showAlert({ type, user, detail, msg }) {
   card.className = `alert-card ${type}`;
 
   const typeLabels = {
-    follow: '✦ NUEVO FOLLOWER ✦',
-    sub:    '★ NUEVO SUB ★',
-    resub:  '★ RESUB ★',
-    subgift:'★ GIFTED SUB ★',
-    bits:   '💎 BITS 💎',
-    cheer:  '💎 CHEER 💎',
+    follow:     '✦ NUEVO FOLLOWER ✦',
+    sub:        '★ NUEVO SUB ★',
+    resub:      '★ RESUB ★',
+    subgift:    '★ GIFTED SUB ★',
+    bits:       '💎 BITS 💎',
+    cheer:      '💎 CHEER 💎',
+    raid:       '🚀 RAID ENTRANTE 🚀',
     redemption: '⚡ CANJEO ⚡',
   };
 
@@ -655,27 +1047,53 @@ function escHtml(s) {
    ÚLTIMO FOLLOW INDICATOR
 ────────────────────────────────────────────────────────── */
 function showLastFollow(name) {
+  if (!name) return;
   const el = document.getElementById('recent-follow');
   document.getElementById('last-follow-name').textContent = name;
-  el.classList.add('visible');
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 900);
 }
 
 /* ──────────────────────────────────────────────────────────
    FORTNITE STATS
 ────────────────────────────────────────────────────────── */
 async function fetchFnStats() {
-  if (!EPIC_USER) return;
+  const statusPill = document.getElementById('fn-api-status');
+  if (!EPIC_USER) {
+    try {
+      const cfgRes = await fetch(`${BACKEND_URL}/fortnite/config`);
+      if (cfgRes.ok) {
+        const cfg = await cfgRes.json();
+        if (cfg.epicUsername) EPIC_USER = cfg.epicUsername;
+        if (cfg.statsMode) STATS_MODE = cfg.statsMode;
+      }
+    } catch {}
+  }
+
+  if (!EPIC_USER) {
+    if (statusPill) statusPill.textContent = 'SIN EPIC ID';
+    return;
+  }
+
   try {
     const r = await fetch(`${BACKEND_URL}/fortnite/stats/${encodeURIComponent(EPIC_USER)}?mode=${STATS_MODE}`);
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (statusPill) statusPill.textContent = 'OFFLINE';
+      return;
+    }
     const data = await r.json();
-    document.getElementById('fn-kills').textContent    = fmtNum(data.kills ?? 0);
-    document.getElementById('fn-wins').textContent     = fmtNum(data.wins ?? 0);
-    document.getElementById('fn-matches').textContent   = fmtNum(data.matches ?? 0);
-    document.getElementById('fn-kd').textContent        = (data.kd ?? 0).toFixed(2);
-    document.getElementById('fn-winrate').textContent   = (data.winRate ?? 0).toFixed(1) + '%';
-    document.getElementById('fn-stats').classList.add('visible');
-  } catch {}
+    document.getElementById('fn-kills').textContent   = fmtNum(data.kills ?? 0);
+    document.getElementById('fn-wins').textContent    = fmtNum(data.wins ?? 0);
+    document.getElementById('fn-matches').textContent = fmtNum(data.matches ?? 0);
+    document.getElementById('fn-kd').textContent      = Number(data.kd ?? 0).toFixed(2);
+    document.getElementById('fn-winrate').textContent = Number(data.winRate ?? 0).toFixed(1) + '%';
+    if (statusPill) {
+      statusPill.textContent = EPIC_USER;
+      statusPill.classList.add('ok');
+    }
+  } catch {
+    if (statusPill) statusPill.textContent = 'ERROR';
+  }
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -685,7 +1103,7 @@ const MAX_CHAT_MSGS = 50;
 
 function initChatLayout() {
   const el = document.getElementById('fn-chat');
-  if (!el) return;
+  if (!el || WIDGET_ONLY === 'chat') return;
   el.classList.remove('left', 'right');
   if (LAYOUT === 'chat-right') {
     el.classList.add('right');
@@ -699,9 +1117,9 @@ function addChatMessage(displayName, text, color) {
   if (!container) return;
   const row = document.createElement('div');
   row.className = 'fn-chat-msg';
-  row.innerHTML = `<span class="un" style="color:${color || '#00D4FF'}">${displayName}</span> <span class="txt">${text}</span>`;
+  row.innerHTML = `<span class="un" style="color:${escHtml(color || '#00D4FF')}">${escHtml(displayName)}:</span> <span class="txt">${escHtml(text)}</span>`;
   container.appendChild(row);
-  if (container.children.length > MAX_CHAT_MSGS) container.removeChild(container.firstChild);
+  while (container.children.length > MAX_CHAT_MSGS) container.removeChild(container.firstChild);
   container.scrollTop = container.scrollHeight;
 }
 
@@ -732,31 +1150,24 @@ function initSocket() {
       .then(d => { if (d) applyHud(d); })
       .catch(() => {});
   });
-  socket.on('connect_error', (err) => {
-    console.error('Socket connection error:', err.message);
-  });
 
   socket.on('disconnect', () => {
     document.getElementById('offline-notice').classList.add('show');
   });
 
-  /* HUD en vivo */
   socket.on('hud:update', applyHud);
 
-  /* Follows */
   socket.on('channel:follow', ({ userDisplayName }) => {
     showLastFollow(userDisplayName);
     enqueueAlert({ type: 'follow', user: userDisplayName });
   });
 
-  /* Subs */
   socket.on('channel:subscribe', ({ userDisplayName, tier, isGift }) => {
     if (isGift) return;
     const tierLabel = tier === '1000' ? 'Tier 1' : tier === '2000' ? 'Tier 2' : 'Tier 3';
     enqueueAlert({ type: 'sub', user: userDisplayName, detail: tierLabel });
   });
 
-  /* Resubs */
   socket.on('channel:subscription-message', ({ userDisplayName, tier, cumulativeMonths, messageText }) => {
     const tierLabel = tier === '1000' ? 'Tier 1' : tier === '2000' ? 'Tier 2' : 'Tier 3';
     enqueueAlert({
@@ -767,7 +1178,6 @@ function initSocket() {
     });
   });
 
-  /* Sub gift */
   socket.on('channel:subgift', ({ gifterDisplayName, amount, tier }) => {
     const tierLabel = tier === '1000' ? 'Tier 1' : tier === '2000' ? 'Tier 2' : 'Tier 3';
     enqueueAlert({
@@ -777,22 +1187,27 @@ function initSocket() {
     });
   });
 
-  /* Bits / Cheers */
   socket.on('channel:cheer', ({ userDisplayName, bits, message }) => {
     enqueueAlert({
       type: 'bits',
       user: userDisplayName,
-      detail: `${bits.toLocaleString()} bits`,
+      detail: `${Number(bits || 0).toLocaleString()} bits`,
       msg: message || undefined,
     });
   });
 
-  /* Redemptions */
+  socket.on('channel:raid', ({ fromBroadcasterDisplayName, viewers }) => {
+    enqueueAlert({
+      type: 'raid',
+      user: fromBroadcasterDisplayName,
+      detail: `${Number(viewers || 0).toLocaleString()} espectadores`,
+    });
+  });
+
   socket.on('channel:redemption', ({ userDisplayName, rewardTitle }) => {
     enqueueAlert({ type: 'redemption', user: userDisplayName, detail: rewardTitle });
   });
 
-  /* Chat messages (for fn-chat box) */
   socket.on('chat:message', ({ user, text }) => {
     addChatMessage(user.displayName, text, user.color);
   });
@@ -802,6 +1217,7 @@ function initSocket() {
    PARTÍCULAS DE FONDO
 ────────────────────────────────────────────────────────── */
 (function initParticles() {
+  if (WIDGET_ONLY) return;
   const canvas = document.getElementById('particles');
   const ctx = canvas.getContext('2d');
   canvas.width  = 1920;
@@ -820,7 +1236,6 @@ function initSocket() {
     alpha: Math.random() * 0.45 + 0.1,
   }));
 
-  /* Líneas de cuadrícula tenue */
   function drawGrid() {
     ctx.strokeStyle = 'rgba(0,212,255,0.035)';
     ctx.lineWidth = 0.5;
@@ -858,6 +1273,8 @@ function initSocket() {
 /* ──────────────────────────────────────────────────────────
    BOOT
 ────────────────────────────────────────────────────────── */
+initEditMode();
+
 function loadSocketIO(cb) {
   const script = document.createElement('script');
   script.onload = () => cb();
@@ -870,7 +1287,6 @@ loadSocketIO(function(err) {
   if (!err) {
     initSocket();
   } else {
-    // Retry socket.io load once after 3s
     setTimeout(() => loadSocketIO(function(err2) {
       if (!err2) initSocket();
     }), 3000);
@@ -881,7 +1297,6 @@ loadSocketIO(function(err) {
     document.getElementById('demo-badge').classList.add('show');
     startDemo();
   }
-  // Fortnite stats (runs regardless of socket)
   fetchFnStats();
   setInterval(fetchFnStats, 5 * 60 * 1000);
 });
@@ -892,27 +1307,31 @@ function startDemo() {
     uptimeSeconds: 4520,
     streamTitle: 'RANKED SOLO · Bo9 con subs',
     gameName: 'Fortnite',
+    lastFollower: 'QuantumSniper99',
     isLive: true,
   });
 
-  // Demo Fortnite stats
   const demoStats = { kills: 15842, wins: 423, matches: 2310, kd: 3.28, winRate: 18.3 };
-  document.getElementById('fn-kills').textContent    = fmtNum(demoStats.kills);
-  document.getElementById('fn-wins').textContent     = fmtNum(demoStats.wins);
-  document.getElementById('fn-matches').textContent   = fmtNum(demoStats.matches);
-  document.getElementById('fn-kd').textContent        = demoStats.kd.toFixed(2);
-  document.getElementById('fn-winrate').textContent   = demoStats.winRate.toFixed(1) + '%';
-  document.getElementById('fn-stats').classList.add('visible');
+  document.getElementById('fn-kills').textContent   = fmtNum(demoStats.kills);
+  document.getElementById('fn-wins').textContent    = fmtNum(demoStats.wins);
+  document.getElementById('fn-matches').textContent = fmtNum(demoStats.matches);
+  document.getElementById('fn-kd').textContent      = demoStats.kd.toFixed(2);
+  document.getElementById('fn-winrate').textContent = demoStats.winRate.toFixed(1) + '%';
+  const statusPill = document.getElementById('fn-api-status');
+  if (statusPill) {
+    statusPill.textContent = 'DEMO';
+    statusPill.classList.add('ok');
+  }
 
-  setTimeout(() => addChatMessage('QuantumSniper99', 'Vamos con todo esta rankeds 🔥', '#FFD700'), 3000);
-  setTimeout(() => addChatMessage('NoRecoilKing', 'tira pa\'lante maestro', '#C84BFF'), 7000);
-  setTimeout(() => addChatMessage('StormRider', 'oieee que juegazoooo', '#00D4FF'), 12000);
-  setTimeout(() => addChatMessage('LegendGifter', 'saca la escopeta rey', '#FF6B6B'), 18000);
+  addChatMessage('QuantumSniper99', 'Vamos con todo esta rankeds 🔥', '#FFD700');
+  setTimeout(() => addChatMessage('NoRecoilKing', 'tira pa\'lante maestro', '#C84BFF'), 2500);
+  setTimeout(() => addChatMessage('StormRider', 'oieee que juegazoooo', '#00D4FF'), 5500);
+  setTimeout(() => addChatMessage('LegendGifter', 'saca la escopeta rey', '#FF6B6B'), 9000);
 
-  setTimeout(() => enqueueAlert({ type: 'follow', user: 'QuantumSniper99' }), 2500);
-  setTimeout(() => enqueueAlert({ type: 'sub', user: 'NoRecoilKing', detail: 'Tier 1' }), 8000);
-  setTimeout(() => enqueueAlert({ type: 'bits', user: 'StormRider', detail: '500 bits', msg: '¡Vamos que los tiramos!' }), 14000);
-  setTimeout(() => enqueueAlert({ type: 'subgift', user: 'LegendGifter', detail: '× 5 subs · Tier 1' }), 20000);
+  setTimeout(() => enqueueAlert({ type: 'follow', user: 'QuantumSniper99' }), 1500);
+  setTimeout(() => enqueueAlert({ type: 'sub', user: 'NoRecoilKing', detail: 'Tier 1' }), 7500);
+  setTimeout(() => enqueueAlert({ type: 'bits', user: 'StormRider', detail: '500 bits', msg: '¡Vamos que los tiramos!' }), 13500);
+  setTimeout(() => enqueueAlert({ type: 'raid', user: 'LegendGifter', detail: '120 espectadores' }), 19500);
 }
 </script>
 </body>

@@ -29,6 +29,80 @@ interface EndScreenSocial {
   visible: boolean;
 }
 
+interface FnCartoonModuleDescriptor {
+  widgetId: 'stream-stats' | 'career-stats' | 'chat' | 'recent-follow' | 'info-bar' | 'alerts';
+  icon: string;
+  labelKey: string;
+  descKey: string;
+  color: string;
+  width: number;
+  height: number;
+  obsSourceName: string;
+}
+
+const FN_CARTOON_MODULES: FnCartoonModuleDescriptor[] = [
+  {
+    widgetId: 'stream-stats',
+    icon: '📊',
+    labelKey: 'obs.fnModStreamStats',
+    descKey: 'obs.fnModStreamStatsDesc',
+    color: '#00d2ff',
+    width: 340,
+    height: 210,
+    obsSourceName: 'FN Cartoon · Datos Streaming',
+  },
+  {
+    widgetId: 'career-stats',
+    icon: '⏱️',
+    labelKey: 'obs.fnModCareerStats',
+    descKey: 'obs.fnModCareerStatsDesc',
+    color: '#ffea00',
+    width: 360,
+    height: 410,
+    obsSourceName: 'FN Cartoon · Tiempo + Trayectoria',
+  },
+  {
+    widgetId: 'chat',
+    icon: '💬',
+    labelKey: 'obs.fnModChat',
+    descKey: 'obs.fnModChatDesc',
+    color: '#00d2ff',
+    width: 450,
+    height: 390,
+    obsSourceName: 'FN Cartoon · Chat Escuadrón',
+  },
+  {
+    widgetId: 'recent-follow',
+    icon: '🎖️',
+    labelKey: 'obs.fnModRecentFollow',
+    descKey: 'obs.fnModRecentFollowDesc',
+    color: '#ffea00',
+    width: 360,
+    height: 120,
+    obsSourceName: 'FN Cartoon · Último Seguidor',
+  },
+  {
+    widgetId: 'info-bar',
+    icon: '📺',
+    labelKey: 'obs.fnModInfoBar',
+    descKey: 'obs.fnModInfoBarDesc',
+    color: '#b829ff',
+    width: 1920,
+    height: 90,
+    obsSourceName: 'FN Cartoon · Barra Info Directo',
+  },
+  {
+    widgetId: 'alerts',
+    icon: '🔔',
+    labelKey: 'obs.fnModAlerts',
+    descKey: 'obs.fnModAlertsDesc',
+    color: '#00d2ff',
+    width: 860,
+    height: 420,
+    obsSourceName: 'FN Cartoon · Alertas Victory Royale',
+  },
+];
+
 interface ThemeDescriptor {
   id: string;
   labelKey: string;
@@ -305,11 +379,22 @@ export function ObsPanel({ channel }: Props) {
   const [orientation, setOrientation] = useState<'all' | 'horizontal' | 'vertical'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
-  const [previewOverlay, setPreviewOverlay] = useState<{ url: string; orientation: 'horizontal' | 'vertical' } | null>(null);
+  const [previewOverlay, setPreviewOverlay] = useState<{
+    url: string;
+    orientation: 'horizontal' | 'vertical';
+    customWidth?: number;
+    customHeight?: number;
+    customLabel?: string;
+  } | null>(null);
   const [socialExpanded, setSocialExpanded] = useState(false);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>(DEFAULT_SOCIAL_LINKS);
   const [endScreenSocials, setEndScreenSocials] = useState<EndScreenSocial[]>(END_SCREEN_SOCIALS_INIT);
   const [endSocialExpanded, setEndSocialExpanded] = useState<string | null>(null);
+  const [fnExpandedMap, setFnExpandedMap] = useState<Record<string, boolean>>({
+    fortnite: true,
+    'fortnite-hud-api': true,
+  });
+  const [fnHiddenLayersMap, setFnHiddenLayersMap] = useState<Record<string, string[]>>({});
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
 
   const [customGame, setCustomGame] = useState('');
@@ -372,11 +457,13 @@ export function ObsPanel({ channel }: Props) {
     const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
     const socials = endScreenSocials.filter((s) => s.visible && s.username.trim());
     const socialsParam = socials.length > 0 ? encodeURIComponent(JSON.stringify(socials.map((s) => ({ p: s.platform, u: s.username })))) : '';
+    const hiddenForOv = fnHiddenLayersMap[ov.id] ?? [];
     if (ov.filename) {
       let url = `${overlayBaseUrl}/overlays/${ov.filename}`;
       url += `?channel=${channel}`;
       url += `&backend=${encodeURIComponent(be)}`;
       if ((ov.mode === 'fortnite' || ov.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
+      if ((ov.id === 'fortnite' || ov.id === 'fortnite-hud-api') && hiddenForOv.length > 0) url += `&hide=${encodeURIComponent(hiddenForOv.join(','))}`;
       if (ov.mode.endsWith('-end') && socialsParam) url += `&socials=${socialsParam}`;
       return url;
     }
@@ -384,6 +471,55 @@ export function ObsPanel({ channel }: Props) {
     url += `&channel=${channel}`;
     if (ov.supportsTheme && selectedTheme) url += `&theme=${selectedTheme}`;
     return url;
+  }
+
+  function buildFnModuleUrl(filename: string, widgetId: string): string {
+    const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+    let url = `${overlayBaseUrl}/overlays/${filename}`;
+    url += `?channel=${channel}&widget=${encodeURIComponent(widgetId)}`;
+    if (fnEpicUsername) {
+      url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
+    }
+    url += `&backend=${encodeURIComponent(be)}`;
+    return url;
+  }
+
+  const applyFnModuleToObs = useCallback(async (ov: OverlayEntry, mod: FnCartoonModuleDescriptor) => {
+    const filename = ov.filename || 'fortnite_horizontal_hud_api.html';
+    const applyKey = `fn-mod-${ov.id}-${mod.widgetId}`;
+    const prefix = ov.id === 'fortnite' ? 'FN Overlay' : 'FN Cartoon';
+    const sourceName = `${prefix} · ${cleanLabel(t(mod.labelKey))}`;
+    setObsApplyingId(applyKey);
+    try {
+      const url = buildFnModuleUrl(filename, mod.widgetId);
+      const r = await apiPost('/obs/apply-scene', {
+        name: sourceName,
+        url,
+        width: mod.width,
+        height: mod.height,
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) {
+        toast.error(data.error || 'Failed to apply widget to OBS');
+      } else {
+        toast.success(`✓ ${sourceName} (${mod.width}×${mod.height})`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Apply error';
+      toast.error(message);
+    } finally {
+      setObsApplyingId(null);
+    }
+  }, [channel, overlayBaseUrl, fnEpicUsername, fnStatsMode, fnLayout, toast, t]);
+
+  function toggleFnLayer(overlayId: string, widgetId: string) {
+    setFnHiddenLayersMap((prev) => {
+      const current = prev[overlayId] ?? [];
+      const next = current.includes(widgetId)
+        ? current.filter((id) => id !== widgetId)
+        : [...current, widgetId];
+      return { ...prev, [overlayId]: next };
+    });
   }
 
   const applyOverlayToObs = useCallback(async (ov: OverlayEntry) => {
@@ -406,7 +542,7 @@ export function ObsPanel({ channel }: Props) {
     } finally {
       setObsApplyingId(null);
     }
-  }, [channel, overlayBaseUrl, selectedTheme, fnEpicUsername, fnStatsMode, fnLayout, endScreenSocials, toast, t]);
+  }, [channel, overlayBaseUrl, selectedTheme, fnEpicUsername, fnStatsMode, fnLayout, fnHiddenLayersMap, endScreenSocials, toast, t]);
 
   const saveFnConfig = async () => {
     const body: { epicUsername: string; statsMode: string; layout: string; apiKey?: string } = { epicUsername: fnEpicUsername, statsMode: fnStatsMode, layout: fnLayout };
@@ -445,10 +581,12 @@ export function ObsPanel({ channel }: Props) {
 
   function buildUrl(item: OverlayEntry): string {
     const standalone = item.filename;
+    const hiddenForItem = fnHiddenLayersMap[item.id] ?? [];
     if (standalone) {
       let url = `${overlayBaseUrl}/overlays/${standalone}`;
       if (channel) url += `?channel=${channel}`;
       if ((item.mode === 'fortnite' || item.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
+      if ((item.id === 'fortnite' || item.id === 'fortnite-hud-api') && hiddenForItem.length > 0) url += `&hide=${encodeURIComponent(hiddenForItem.join(','))}`;
       const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
       url += `${channel ? '&' : '?'}backend=${encodeURIComponent(be)}`;
       if (item.mode.endsWith('-end')) {
@@ -502,12 +640,18 @@ export function ObsPanel({ channel }: Props) {
 
   function renderOverlayCard(item: OverlayEntry) {
     const isSocial = item.id === 'social';
+    const isFnModular = item.id === 'fortnite' || item.id === 'fortnite-hud-api';
+    const isFnExpanded = Boolean(fnExpandedMap[item.id]);
+    const hiddenLayersForItem = fnHiddenLayersMap[item.id] ?? [];
     const url = isSocial ? buildSocialUrl() : buildUrl(item);
     const isCopied = copied === item.id;
     const isEndScreen = item.mode.endsWith('-end');
 
     return (
-      <div key={item.id} className={styles.sceneCardWrap}>
+      <div
+        key={item.id}
+        className={`${styles.sceneCardWrap} ${isFnModular && isFnExpanded ? styles.sceneCardWrapWide : ''}`}
+      >
         <div
           className={`glass-card ${styles.overlayCard}`}
           style={{ '--card-accent': item.color } as CSSProperties}
@@ -598,6 +742,22 @@ export function ObsPanel({ channel }: Props) {
                 </button>
               )}
 
+              {isFnModular && (
+                <button
+                  id={`fn-modules-btn-${item.id}`}
+                  type="button"
+                  onClick={() =>
+                    setFnExpandedMap((prev) => ({
+                      ...prev,
+                      [item.id]: !prev[item.id],
+                    }))
+                  }
+                  className={isFnExpanded ? styles.configureBtnFn : styles.configureBtnInactive}
+                >
+                  {isFnExpanded ? '▲' : '▼'} {t('obs.fnModulesBtn')}
+                </button>
+              )}
+
               {isSocial && (
                 <button
                   id="social-configure-btn"
@@ -620,6 +780,143 @@ export function ObsPanel({ channel }: Props) {
             </div>
           </div>
         </div>
+
+        {isFnModular && (
+          <AnimatePresence>
+            {isFnExpanded && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className={styles.expandSection}
+              >
+                <div className={styles.expandContentFn}>
+                  <div className={styles.fnModulesHeader}>
+                    <div>
+                      <p className={styles.sectionTitleFn}>{t('obs.fnModulesTitle')}</p>
+                      <p className={styles.fnModulesDesc}>{t('obs.fnModulesDesc')}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewOverlay({
+                          url: `${url}&edit=true`,
+                          orientation: 'horizontal',
+                          customLabel: '1920×1080 · Drag & Drop',
+                        })
+                      }
+                      className={`sf-btn sf-btn-ghost ${styles.fnDragModeBtn}`}
+                    >
+                      {t('obs.fnInteractiveDragBtn')}
+                    </button>
+                  </div>
+
+                  {/* Layer visibility toggles for the full 1920x1080 overlay */}
+                  <div className={styles.fnLayerToggleRow}>
+                    <span className={styles.fnLayerToggleLabel}>{t('obs.fnLayersFilterLabel')}</span>
+                    <div className={styles.fnLayerPills}>
+                      {FN_CARTOON_MODULES.map((mod) => {
+                        const isVisible = !hiddenLayersForItem.includes(mod.widgetId);
+                        return (
+                          <button
+                            key={mod.widgetId}
+                            type="button"
+                            onClick={() => toggleFnLayer(item.id, mod.widgetId)}
+                            className={`${styles.fnLayerPill} ${isVisible ? styles.fnLayerPillActive : ''}`}
+                            style={{ '--mod-color': mod.color } as CSSProperties}
+                          >
+                            <span>{isVisible ? '✓' : '✕'}</span>
+                            <span>{mod.icon}</span>
+                            <span>{cleanLabel(t(mod.labelKey))}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 6 Individual OBS Browser Source Widgets */}
+                  <div className={styles.fnModulesGrid}>
+                    {FN_CARTOON_MODULES.map((mod) => {
+                      const filename = item.filename || 'fortnite_horizontal_hud_api.html';
+                      const modUrl = buildFnModuleUrl(filename, mod.widgetId);
+                      const modCopyId = `fn-mod-${item.id}-${mod.widgetId}`;
+                      const isModCopied = copied === modCopyId;
+                      const isApplyingMod = obsApplyingId === modCopyId;
+
+                      return (
+                        <div
+                          key={mod.widgetId}
+                          className={styles.fnModuleCard}
+                          style={{ '--mod-color': mod.color } as CSSProperties}
+                        >
+                          <div className={styles.fnModuleHeader}>
+                            <div className={styles.fnModuleTitleGroup}>
+                              <span className={styles.fnModuleIcon}>{mod.icon}</span>
+                              <span className={styles.fnModuleTitle}>{cleanLabel(t(mod.labelKey))}</span>
+                            </div>
+                            <span className={styles.fnModuleResBadge}>
+                              {mod.width}×{mod.height}
+                            </span>
+                          </div>
+
+                          <p className={styles.fnModuleDesc}>{t(mod.descKey)}</p>
+
+                          <div className={styles.fnModuleFooter}>
+                            <code
+                              className={styles.codeBlock}
+                              onClick={() => copyToClipboard(modCopyId, modUrl)}
+                              title={modUrl}
+                            >
+                              {modUrl}
+                            </code>
+
+                            <div className={styles.cardActions}>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(modCopyId, modUrl)}
+                                className={`sf-btn ${isModCopied ? 'sf-btn-ghost' : 'sf-btn-primary'} ${styles.copyBtn}`}
+                              >
+                                {isModCopied ? cleanLabel(t('obs.copiado')) : t('obs.copiar')}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewOverlay({
+                                    url: modUrl,
+                                    orientation: 'horizontal',
+                                    customWidth: mod.width,
+                                    customHeight: mod.height,
+                                    customLabel: `${cleanLabel(t(mod.labelKey))} (${mod.width}×${mod.height})`,
+                                  })
+                                }
+                                className={`sf-btn sf-btn-ghost ${styles.previewBtn}`}
+                              >
+                                {t('obs.vistaPrevia')}
+                              </button>
+
+                              {obsConnected && (
+                                <button
+                                  type="button"
+                                  onClick={() => applyFnModuleToObs(item, mod)}
+                                  disabled={isApplyingMod}
+                                  className={`sf-btn sf-btn-ghost ${styles.obsApplyBtn}`}
+                                >
+                                  {isApplyingMod ? '...' : cleanLabel(t('obs.obsApplyBtn'))}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
 
         {isEndScreen && (
           <AnimatePresence>
@@ -1076,6 +1373,9 @@ export function ObsPanel({ channel }: Props) {
           open={true}
           url={previewOverlay.url}
           orientation={previewOverlay.orientation}
+          customWidth={previewOverlay.customWidth}
+          customHeight={previewOverlay.customHeight}
+          customLabel={previewOverlay.customLabel}
           onClose={() => setPreviewOverlay(null)}
         />
       )}

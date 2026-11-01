@@ -9,6 +9,9 @@ interface Props {
   open: boolean;
   url: string;
   orientation: 'horizontal' | 'vertical';
+  customWidth?: number;
+  customHeight?: number;
+  customLabel?: string;
   onClose: () => void;
 }
 
@@ -24,14 +27,18 @@ const BACKGROUNDS: { mode: BackgroundMode; labelKey: string; color: string }[] =
   { mode: 'chroma', labelKey: 'overlayPreview.bgChroma', color: '#00ff00' },
 ];
 
-export function OverlayPreviewModal({ open, url, orientation, onClose }: Props) {
+export function OverlayPreviewModal({ open, url, orientation, customWidth, customHeight, customLabel, onClose }: Props) {
   const { t } = useTranslation();
   const [bgMode, setBgMode] = useState<BackgroundMode>('checkerboard');
   const [demoMode, setDemoMode] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
-  const res = RESOLUTIONS[orientation];
+  const baseRes = RESOLUTIONS[orientation];
+  const res = {
+    width: customWidth ?? baseRes.width,
+    height: customHeight ?? baseRes.height,
+  };
 
   const scaledUrl = demoMode
     ? url + (url.includes('?') ? '&' : '?') + 'demo=true'
@@ -95,7 +102,7 @@ export function OverlayPreviewModal({ open, url, orientation, onClose }: Props) 
               <div className={styles.toolbarLeft}>
                 <span className={styles.resLabel}>{res.width}×{res.height}</span>
                 <span className={styles.orientationBadge}>
-                  {orientation === 'vertical' ? t('overlayPreview.vertical') : t('overlayPreview.horizontal')}
+                  {customLabel || (orientation === 'vertical' ? t('overlayPreview.vertical') : t('overlayPreview.horizontal'))}
                 </span>
               </div>
               <div className={styles.toolbarCenter}>
