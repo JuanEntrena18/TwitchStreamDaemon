@@ -2,17 +2,10 @@ import { FastifyInstance } from 'fastify';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import { PrismaClient } from '@prisma/client';
 import { config } from '../config.js';
-import { existsSync } from 'fs';
-import { execFileSync } from 'child_process';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 import { encryptToken, decryptToken, decryptTokenLegacy } from './token-crypto.js';
 import { logger } from '../logger.js';
 import { currentYouTubeUser, youtubeAuthMode, getYouTubeCredentialsInfo } from '../youtube/index.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const _require = createRequire(import.meta.url);
 export const prisma = new PrismaClient();
 
 const SCOPES = [
@@ -46,43 +39,166 @@ function notifyAuth() {
 }
 
 /**
- * Push the Prisma schema to the database, creating tables if they don't exist.
- * Uses the bundled Prisma CLI (found via require.resolve) and the schema file
- * bundled at the app root or in extra/.prisma/client/.
+ * Ensures all required SQLite tables and indexes exist.
+ * Uses native Prisma raw SQL directly in-process (<10ms), avoiding any external
+ * CLI spawns or child process freezes during desktop startup.
  */
-async function pushDbSchema() {
+async function ensureDbSchema() {
   try {
-    const cliPath = _require.resolve('prisma/build/index.js');
-    // Try multiple schema locations (app root prisma/, or extra/.prisma/client/)
-    let schemaPath = '';
-    for (const candidate of [
-      path.resolve(__dirname, '../../../../../prisma/schema.prisma'),           // appRoot/prisma/
-      path.resolve(__dirname, '../../../../extra/.prisma/client/schema.prisma'), // appRoot/extra/.prisma/
-    ]) {
-      if (existsSync(candidate)) { schemaPath = candidate; break; }
-    }
-    if (!schemaPath || !existsSync(cliPath)) return;
+    logger.info('Verifying database schema in SQLite...');
 
-    logger.info('Pushing database schema...');
-    execFileSync(process.execPath, [
-      cliPath, 'db', 'push',
-      `--schema=${schemaPath}`,
-      '--accept-data-loss',
-      '--skip-generate',
-    ], {
-      env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL!, ELECTRON_RUN_AS_NODE: '1' },
-      cwd: path.dirname(schemaPath),
-      stdio: 'pipe',
-      timeout: 30_000,
-    });
-    logger.info('Database schema synchronized');
+    // 1. User table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "User" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "twitchId" TEXT NOT NULL,
+        "login" TEXT NOT NULL,
+        "displayName" TEXT NOT NULL,
+        "avatarUrl" TEXT,
+        "accessToken" TEXT NOT NULL,
+        "refreshToken" TEXT NOT NULL,
+        "tokenExpiresAt" DATETIME,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "User_twitchId_key" ON "User"("twitchId");
+    `);
+
+    // 2. ChannelConfig table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ChannelConfig" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "activeGame" TEXT,
+        "overlaySettings" TEXT DEFAULT '{}',
+        "socialLinks" TEXT DEFAULT '[]',
+        CONSTRAINT "ChannelConfig_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "ChannelConfig_userId_key" ON "ChannelConfig"("userId");
+    `);
+
+    // 3. Giveaway table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Giveaway" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "prize" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'pending',
+        "entries" TEXT NOT NULL DEFAULT '[]',
+        "winnerId" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "endedAt" DATETIME,
+        CONSTRAINT "Giveaway_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+      );
+    `);
+
+    // 4. Prediction table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Prediction" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "options" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'active',
+        "outcome" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "endedAt" DATETIME,
+        CONSTRAINT "Prediction_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+      );
+    `);
+
+    // 5. SecurityConfig table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "SecurityConfig" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "followBotProtection" BOOLEAN NOT NULL DEFAULT true,
+        "spamFilter" BOOLEAN NOT NULL DEFAULT true,
+        "autoBan" BOOLEAN NOT NULL DEFAULT true,
+        "accountAgeFilter" INTEGER NOT NULL DEFAULT 0,
+        CONSTRAINT "SecurityConfig_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "SecurityConfig_userId_key" ON "SecurityConfig"("userId");
+    `);
+
+    // 6. SecurityWhitelist table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "SecurityWhitelist" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "username" TEXT NOT NULL,
+        "reason" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "SecurityWhitelist_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "SecurityWhitelist_userId_username_key" ON "SecurityWhitelist"("userId", "username");
+    `);
+
+    // 7. StreamSession table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "StreamSession" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "streamId" TEXT,
+        "gameName" TEXT NOT NULL,
+        "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "endedAt" DATETIME,
+        "viewersMax" INTEGER NOT NULL DEFAULT 0,
+        "followersGained" INTEGER NOT NULL DEFAULT 0,
+        "durationSeconds" INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+
+    // 8. GameStat table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "GameStat" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "gameName" TEXT NOT NULL,
+        "boxArtUrl" TEXT,
+        "streamCount" INTEGER NOT NULL DEFAULT 0,
+        "totalViews" INTEGER NOT NULL DEFAULT 0,
+        "avgViewers" INTEGER NOT NULL DEFAULT 0,
+        "maxViewers" INTEGER NOT NULL DEFAULT 0,
+        "followersGained" INTEGER NOT NULL DEFAULT 0,
+        "avgDuration" INTEGER NOT NULL DEFAULT 0,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "GameStat_userId_gameName_key" ON "GameStat"("userId", "gameName");
+    `);
+
+    // Check if GameStat has all columns for existing databases (schema evolution)
+    try {
+      const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("GameStat");`);
+      const colNames = new Set(columns.map((c) => c.name));
+      if (!colNames.has('streamCount')) await prisma.$executeRawUnsafe(`ALTER TABLE "GameStat" ADD COLUMN "streamCount" INTEGER NOT NULL DEFAULT 0;`);
+      if (!colNames.has('totalViews')) await prisma.$executeRawUnsafe(`ALTER TABLE "GameStat" ADD COLUMN "totalViews" INTEGER NOT NULL DEFAULT 0;`);
+      if (!colNames.has('avgViewers')) await prisma.$executeRawUnsafe(`ALTER TABLE "GameStat" ADD COLUMN "avgViewers" INTEGER NOT NULL DEFAULT 0;`);
+      if (!colNames.has('maxViewers')) await prisma.$executeRawUnsafe(`ALTER TABLE "GameStat" ADD COLUMN "maxViewers" INTEGER NOT NULL DEFAULT 0;`);
+      if (!colNames.has('followersGained')) await prisma.$executeRawUnsafe(`ALTER TABLE "GameStat" ADD COLUMN "followersGained" INTEGER NOT NULL DEFAULT 0;`);
+      if (!colNames.has('avgDuration')) await prisma.$executeRawUnsafe(`ALTER TABLE "GameStat" ADD COLUMN "avgDuration" INTEGER NOT NULL DEFAULT 0;`);
+    } catch {
+      // Ignore if columns already exist or alter fails
+    }
+
+    logger.info('Database schema verified in SQLite successfully');
   } catch (err) {
-    logger.warn({ err: err instanceof Error ? err.message : err }, 'Schema push failed (non-fatal)');
+    logger.warn({ err: err instanceof Error ? err.message : err }, 'ensureDbSchema warning (non-fatal)');
   }
 }
 
 export async function setupAuth(app: FastifyInstance) {
-  await pushDbSchema();
+  await ensureDbSchema();
 
   authProvider = new RefreshingAuthProvider({
     clientId: config.TWITCH_CLIENT_ID,

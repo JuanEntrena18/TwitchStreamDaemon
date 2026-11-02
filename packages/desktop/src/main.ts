@@ -4,7 +4,7 @@ import {
 } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { createRequire } from 'module';
 import { randomBytes } from 'crypto';
 import type { VibeCvConfig } from '@streamdaemon/shared';
@@ -127,13 +127,13 @@ let mainAlwaysOnTop = false;
 let backendReady = false;
 
 // ── Backend ───────────────────────────────────────────────
-async function startBackend(retries = 3, delayMs = 1000) {
+async function startBackend(retries = 3, delayMs = 600) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const { startServer } = await import('@streamdaemon/backend/dist/index.js');
       await startServer({ port: 3000, frontendDir: getFrontendDistDir() });
       backendReady = true;
-      logger.info('Backend started — serving frontend at http://localhost:3000');
+      logger.info('Backend started — serving frontend at http://127.0.0.1:3000');
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -151,7 +151,7 @@ async function startBackend(retries = 3, delayMs = 1000) {
 }
 
 // ── Vibe Daemon hotkeys ───────────────────────────────────
-const BACKEND_ORIGIN = 'http://localhost:3000';
+const BACKEND_ORIGIN = isDev ? 'http://localhost:3000' : 'http://127.0.0.1:3000';
 let vibeHotkeySignature = '';
 const vibeHotkeyAccelerators: string[] = [];
 
@@ -230,7 +230,7 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = ['http://localhost:3000', 'http://localhost:5173'];
+    const allowed = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
     if (!allowed.some((prefix) => url.startsWith(prefix))) {
       event.preventDefault();
     }
@@ -247,9 +247,9 @@ function createMainWindow() {
   });
 }
 
-function loadMainAppUrl(attempts = 5): void {
+function loadMainAppUrl(attempts = 8): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const mainUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
+  const mainUrl = isDev ? 'http://localhost:5173' : 'http://127.0.0.1:3000';
   mainWindow.loadURL(mainUrl).catch(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (attempts <= 1) {
@@ -257,8 +257,8 @@ function loadMainAppUrl(attempts = 5): void {
       mainWindow.loadFile(getFrontendPath('index.html')).catch(() => {});
       return;
     }
-    console.warn(`⚠️  loadURL failed, retrying in 1500ms… (${attempts - 1} left)`);
-    setTimeout(() => loadMainAppUrl(attempts - 1), 1500);
+    console.warn(`⚠️  loadURL failed, retrying in 1000ms… (${attempts - 1} left)`);
+    setTimeout(() => loadMainAppUrl(attempts - 1), 1000);
   });
 }
 
@@ -267,7 +267,7 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
   if (overlayWindow) overlayWindow.close();
   if (overlaySettingsWindow) { overlaySettingsWindow.close(); overlaySettingsWindow = null; }
 
-  const overlayBaseUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
+  const overlayBaseUrl = isDev ? 'http://localhost:5173' : 'http://127.0.0.1:3000';
   const overlayUrl = isUrl
     ? urlOrChannel
     : `${overlayBaseUrl}/overlay.html?mode=chat&channel=${encodeURIComponent(urlOrChannel)}${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
@@ -317,8 +317,8 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
   });
 
   overlayWindow.webContents.on('will-navigate', (event, url) => {
-    const overlayBase = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
-    if (!url.startsWith(overlayBase)) {
+    const allowed = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
+    if (!allowed.some((prefix) => url.startsWith(prefix))) {
       event.preventDefault();
     }
   });
@@ -751,9 +751,9 @@ function getInitialLoadingHtml(): string {
       height: 100%; width: 38%; border-radius: 999px;
       background: linear-gradient(90deg, #7c3aed 0%, #a855f7 55%, #22d3ee 100%);
       box-shadow: 0 0 14px rgba(168, 85, 247, 0.65);
-      animation: boot-bar 3.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: boot-bar 2.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-    @keyframes boot-bar { from { width: 12%; } to { width: 88%; } }
+    @keyframes boot-bar { 0% { width: 12%; } 60% { width: 78%; } 100% { width: 95%; } }
   </style>
 </head>
 <body>
