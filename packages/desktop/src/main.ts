@@ -249,16 +249,18 @@ function createMainWindow() {
 
 function loadMainAppUrl(attempts = 8): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const mainUrl = isDev ? 'http://localhost:5173' : 'http://127.0.0.1:3000';
+  const mainUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
   mainWindow.loadURL(mainUrl).catch(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (attempts <= 1) {
-      console.warn('⚠️  loadURL failed, falling back to loadFile');
-      mainWindow.loadFile(getFrontendPath('index.html')).catch(() => {});
-      return;
-    }
-    console.warn(`⚠️  loadURL failed, retrying in 1000ms… (${attempts - 1} left)`);
-    setTimeout(() => loadMainAppUrl(attempts - 1), 1000);
+    mainWindow.loadURL('http://127.0.0.1:3000').catch(() => {
+      if (attempts <= 1) {
+        console.warn('⚠️  loadURL failed, falling back to loadFile');
+        mainWindow?.loadFile(getFrontendPath('index.html')).catch(() => {});
+        return;
+      }
+      console.warn(`⚠️  loadURL failed, retrying in 1000ms… (${attempts - 1} left)`);
+      setTimeout(() => loadMainAppUrl(attempts - 1), 1000);
+    });
   });
 }
 

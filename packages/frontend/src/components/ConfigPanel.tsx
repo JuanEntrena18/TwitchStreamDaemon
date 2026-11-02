@@ -3,7 +3,7 @@ import { useTranslation } from '../i18n/context';
 import type { LocaleSetting } from '../i18n/types';
 import { useSocket } from '../hooks/useSocket';
 import { useAuthStatus } from '../hooks/useAuthStatus';
-import { apiGet, apiPost } from '../utils/api';
+import { apiGet, apiPost, BACKEND_URL } from '../utils/api';
 import { ConfirmModal } from './ConfirmModal';
 import { Logo } from './Logo';
 import { Toggle } from './Toggle';
@@ -506,7 +506,7 @@ export function ConfigPanel({ channel, alwaysOnTop, toggleAlwaysOnTop }: Props) 
             <div className="text-xs text-dim" style={{ padding: '0.45rem 0.65rem', background: 'rgba(0,0,0,0.22)', borderRadius: 6, border: '1px solid var(--sf-border)' }}>
               Redirect URI en Google Cloud Console:{' '}
               <code style={{ color: 'var(--sf-primary-light)' }}>
-                {youtubeCredentials?.redirectUri || 'http://localhost:3000/auth/youtube/callback'}
+                {youtubeCredentials?.redirectUri || `${BACKEND_URL}/auth/youtube/callback`}
               </code>
             </div>
 

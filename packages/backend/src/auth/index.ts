@@ -223,87 +223,97 @@ export async function setupAuth(app: FastifyInstance) {
   // ── Device Code Grant (Electron / desktop, no redirect) ──
 
   app.post('/auth/device', async (req, reply) => {
-    const params = new URLSearchParams({
-      client_id: config.TWITCH_CLIENT_ID,
-      scopes: SCOPES.join(' '),
-    });
+    try {
+      const params = new URLSearchParams({
+        client_id: config.TWITCH_CLIENT_ID,
+        scopes: SCOPES.join(' '),
+      });
 
-    const res = await fetch('https://id.twitch.tv/oauth2/device', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params,
-    });
+      const res = await fetch('https://id.twitch.tv/oauth2/device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      req.log.error({ err }, 'Twitch device code request failed');
-      return reply.status(400).send({ error: 'Failed to get device code. Please try again.' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        req.log.error({ err }, 'Twitch device code request failed');
+        return reply.status(400).send({ error: 'Twitch no pudo generar el código. Comprueba tu conexión a internet.' });
+      }
+
+      const data = await res.json() as {
+        device_code: string;
+        user_code: string;
+        verification_uri: string;
+        expires_in: number;
+        interval: number;
+      };
+
+      reply.send({
+        device_code: data.device_code,
+        user_code: data.user_code,
+        verification_uri: data.verification_uri,
+        expires_in: data.expires_in,
+        interval: data.interval,
+      });
+    } catch (err) {
+      req.log.error({ err }, 'Network error reaching Twitch OAuth service');
+      return reply.status(502).send({ error: 'No se pudo conectar con los servidores de Twitch. Comprueba tu conexión a internet.' });
     }
-
-    const data = await res.json() as {
-      device_code: string;
-      user_code: string;
-      verification_uri: string;
-      expires_in: number;
-      interval: number;
-    };
-
-    reply.send({
-      device_code: data.device_code,
-      user_code: data.user_code,
-      verification_uri: data.verification_uri,
-      expires_in: data.expires_in,
-      interval: data.interval,
-    });
   });
 
   app.post('/auth/device/poll', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { device_code } = req.body as { device_code: string };
     if (!device_code) return reply.status(400).send({ error: 'Missing device_code' });
 
-    const params = new URLSearchParams({
-      client_id: config.TWITCH_CLIENT_ID,
-      client_secret: config.TWITCH_CLIENT_SECRET,
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      device_code,
-    });
+    try {
+      const params = new URLSearchParams({
+        client_id: config.TWITCH_CLIENT_ID,
+        client_secret: config.TWITCH_CLIENT_SECRET,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code,
+      });
 
-    const res = await fetch('https://id.twitch.tv/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params,
-    });
+      const res = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      });
 
-    // Device code errors come as 400 with { error, message? }
-    // - authorization_pending: user hasn't completed yet (keep polling)
-    // - slow_down: increase interval
-    // - expired_token: restart flow
-    // - access_denied: user denied
+      // Device code errors come as 400 with { error, message? }
+      // - authorization_pending: user hasn't completed yet (keep polling)
+      // - slow_down: increase interval
+      // - expired_token: restart flow
+      // - access_denied: user denied
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const errorType = err.message || err.error || 'authorization_pending';
-      if (errorType !== 'authorization_pending') {
-        req.log.error({ err }, 'Twitch token poll failed');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const errorType = err.message || err.error || 'authorization_pending';
+        if (errorType !== 'authorization_pending') {
+          req.log.error({ err }, 'Twitch token poll failed');
+        }
+        return reply.send({ status: 'pending', error: errorType });
       }
-      return reply.send({ status: 'pending', error: errorType });
+
+      const tokenData = await res.json();
+
+      const userRes = await fetch('https://api.twitch.tv/helix/users', {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          'Client-Id': config.TWITCH_CLIENT_ID,
+        },
+      });
+
+      const userBody = await userRes.json();
+      const twitchUser = userBody.data?.[0];
+      if (!twitchUser) return reply.status(500).send({ error: 'Failed to fetch user' });
+
+      await finishAuth(tokenData, twitchUser);
+      reply.send({ status: 'authenticated', user: currentUser });
+    } catch (err) {
+      req.log.warn({ err }, 'Network error polling Twitch OAuth status');
+      return reply.send({ status: 'pending', error: 'authorization_pending' });
     }
-
-    const tokenData = await res.json();
-
-    const userRes = await fetch('https://api.twitch.tv/helix/users', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-        'Client-Id': config.TWITCH_CLIENT_ID,
-      },
-    });
-
-    const userBody = await userRes.json();
-    const twitchUser = userBody.data?.[0];
-    if (!twitchUser) return reply.status(500).send({ error: 'Failed to fetch user' });
-
-    await finishAuth(tokenData, twitchUser);
-    reply.send({ status: 'authenticated', user: currentUser });
   });
 
   // ── Logout ──

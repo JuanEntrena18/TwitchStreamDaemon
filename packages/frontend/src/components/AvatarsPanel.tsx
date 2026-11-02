@@ -4,6 +4,7 @@ import { useAvatarConfig } from '../avatars/avatarStore';
 import { getAvailableThemes } from '../avatars/AvatarThemeMapper';
 import { Toggle } from './Toggle';
 import { OverlayPreviewModal } from './OverlayPreviewModal';
+import { BACKEND_URL } from '../utils/api';
 import styles from './AvatarsPanel.module.css';
 
 interface Props {
@@ -40,7 +41,7 @@ export function AvatarsPanel({ channel }: Props) {
   const [previewOrientation, setPreviewOrientation] = useState<'vertical' | 'horizontal' | null>(null);
 
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  const backendUrl = BACKEND_URL;
   const overlayUrl = `${overlayBaseUrl}/overlay.html?mode=avatars&channel=${channel}&backend=${encodeURIComponent(backendUrl)}`;
 
   const themes = getAvailableThemes();

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from '../i18n/context';
 import { useAuthStatus } from '../hooks/useAuthStatus';
 import { Logo } from './Logo';
+import { BACKEND_URL } from '../utils/api';
 import styles from './SetupWizard.module.css';
 
 interface Props {
@@ -86,7 +87,7 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
-  const redirectUri = youtubeCredentials?.redirectUri || 'http://localhost:3000/auth/youtube/callback';
+  const redirectUri = youtubeCredentials?.redirectUri || `${BACKEND_URL}/auth/youtube/callback`;
 
   const copyRedirectUri = () => {
     navigator.clipboard.writeText(redirectUri).catch(() => {});

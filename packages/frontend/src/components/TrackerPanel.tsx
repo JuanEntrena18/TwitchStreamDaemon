@@ -6,7 +6,7 @@ import { IconKpi, IconInbox } from './icons/icons';
 import { TrackerChart } from './TrackerChart';
 import { SkeletonCard, SkeletonChart } from './Skeletons';
 import { TrackerAdvice } from './TrackerAdvice';
-import { apiGet } from '../utils/api';
+import { apiGet, BACKEND_URL } from '../utils/api';
 import { StreamList } from './StreamList';
 import { formatDate, formatHours, formatDuration, formatNumber, estimateRevenue, type StreamDetail } from '../utils/trackerUtils';
 import styles from './TrackerPanel.module.css';
@@ -60,7 +60,7 @@ export function TrackerPanel({ channel }: Props) {
   const [error, setError] = useState('');
   const [expandedStream, setExpandedStream] = useState<string | null>(null);
   const [chartMetric, setChartMetric] = useState<'totalViews' | 'followersGained' | 'durationInSeconds'>('totalViews');
-  const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  const baseUrl = BACKEND_URL;
 
   useEffect(() => {
     if (!channel) return;

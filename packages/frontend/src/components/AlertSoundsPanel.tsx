@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { apiGet, apiPut, apiPost } from '../utils/api';
+import { apiGet, apiPut, apiPost, BACKEND_URL } from '../utils/api';
 import styles from './AlertSoundsPanel.module.css';
 
 interface Props {
@@ -39,7 +39,6 @@ const ALERT_TYPES: { key: keyof SoundConfig; label: string; icon: string; color:
   { key: 'redemption', label: 'Canje (redemption)', icon: '🎯', color: '#10b981' },
 ];
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
 
 export function AlertSoundsPanel({ channel }: Props) {
   const [sounds, setSounds] = useState<SoundConfig>({ ...DEFAULT_SOUNDS });

@@ -8,8 +8,9 @@ import {
   type ReactNode,
 } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { BACKEND_URL } from '../utils/api';
 
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
+const SOCKET_URL = BACKEND_URL;
 
 const isElectron = typeof window !== 'undefined' && !!window.streamforger?.isDesktop;
 

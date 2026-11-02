@@ -1,3 +1,5 @@
+import { BACKEND_URL } from './api';
+
 // ─── Configuration ───────────────────────────────────────────────────
 /** Max utterances tracked before we flush the queue and speak only the latest */
 const MAX_QUEUE_SIZE = 8;
@@ -5,8 +7,6 @@ const MAX_QUEUE_SIZE = 8;
 const KEEPALIVE_MS = 10_000;
 /** Auto-remove tracked utterances whose callbacks never fired */
 const ORPHAN_TIMEOUT_MS = 30_000;
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
 
 // ─── Public helpers ──────────────────────────────────────────────────
 

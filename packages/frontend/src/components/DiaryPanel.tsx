@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useSocket } from '../hooks/useSocket';
 import { OVERLAY_REGISTRY } from '../config/overlayRegistry';
-import { apiGet, apiPost, apiPut, apiDelete } from '../utils/api';
+import { apiGet, apiPost, apiPut, apiDelete, BACKEND_URL } from '../utils/api';
 import styles from './DiaryPanel.module.css';
 
 interface HltbData {
@@ -82,7 +82,7 @@ export function DiaryPanel({ channel }: Props) {
   const [searching, setSearching] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
-  const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  const be = BACKEND_URL;
   const ov = OVERLAY_REGISTRY.find(o => o.id === 'diary');
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
   const overlayUrl = ov?.filename

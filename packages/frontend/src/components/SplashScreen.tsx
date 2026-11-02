@@ -2,9 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from '../i18n/context';
 import { Logo } from './Logo';
 import { APP_VERSION_LABEL } from '../version';
+import { BACKEND_URL } from '../utils/api';
 import styles from './SplashScreen.module.css';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
 const POLL_INTERVAL = 450;
 const MAX_WAIT = 5000;
 const isDesktop = typeof window !== 'undefined' && typeof window.streamforger !== 'undefined';

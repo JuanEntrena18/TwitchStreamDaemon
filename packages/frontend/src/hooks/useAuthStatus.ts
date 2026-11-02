@@ -99,7 +99,14 @@ export function useAuthStatus() {
   const startDeviceLogin = useCallback(async () => {
     setDeviceState({ status: 'loading' });
     try {
-      const res = await fetch(`${BACKEND_URL}/auth/device`, { method: 'POST' });
+      let res: Response;
+      try {
+        res = await fetch(`${BACKEND_URL}/auth/device`, { method: 'POST' });
+      } catch {
+        // Fallback: try relative path if BACKEND_URL had origin/DNS mismatch
+        res = await fetch('/auth/device', { method: 'POST' });
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setDeviceState({ status: 'idle', error: err.error || t('auth.errorLogin') });
@@ -127,11 +134,21 @@ export function useAuthStatus() {
     const poll = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch(`${BACKEND_URL}/auth/device/poll`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_code: deviceState.deviceCode }),
-        });
+        let res: Response;
+        try {
+          res = await fetch(`${BACKEND_URL}/auth/device/poll`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_code: deviceState.deviceCode }),
+          });
+        } catch {
+          res = await fetch('/auth/device/poll', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_code: deviceState.deviceCode }),
+          });
+        }
+
         if (cancelled) return;
         const data = await res.json();
         if (data.status === 'authenticated') {

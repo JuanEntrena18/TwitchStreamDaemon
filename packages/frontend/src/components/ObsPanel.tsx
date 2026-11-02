@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiGet, apiPut, apiPost } from '../utils/api';
+import { apiGet, apiPut, apiPost, BACKEND_URL } from '../utils/api';
 import { useTranslation } from '../i18n/context';
 import { useToast } from '../contexts/ToastContext';
 import { OVERLAY_REGISTRY, CATEGORIES, type OverlayEntry, type OverlayCategory } from '../config/overlayRegistry';
@@ -511,7 +511,7 @@ export function ObsPanel({ channel }: Props) {
   }
 
   function getOverlayUrl(ov: OverlayEntry): string {
-    const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+    const be = BACKEND_URL;
     const socials = endScreenSocials.filter((s) => s.visible && s.username.trim());
     const socialsParam = socials.length > 0 ? encodeURIComponent(JSON.stringify(socials.map((s) => ({ p: s.platform, u: s.username })))) : '';
     const hiddenForOv = fnHiddenLayersMap[ov.id] ?? [];
@@ -531,7 +531,7 @@ export function ObsPanel({ channel }: Props) {
   }
 
   function buildFnModuleUrl(filename: string, widgetId: string): string {
-    const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+    const be = BACKEND_URL;
     let url = `${overlayBaseUrl}/overlays/${filename}`;
     url += `?channel=${channel}&widget=${encodeURIComponent(widgetId)}`;
     if (fnEpicUsername) {
@@ -695,7 +695,7 @@ export function ObsPanel({ channel }: Props) {
       if (channel) url += `?channel=${channel}`;
       if ((item.mode === 'fortnite' || item.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
       if (MODULAR_OVERLAY_IDS.has(item.id) && hiddenForItem.length > 0) url += `&hide=${encodeURIComponent(hiddenForItem.join(','))}`;
-      const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+      const be = BACKEND_URL;
       url += `${channel ? '&' : '?'}backend=${encodeURIComponent(be)}`;
       if (item.mode.endsWith('-end')) {
         const active = endScreenSocials.filter((s) => s.visible && s.username.trim());

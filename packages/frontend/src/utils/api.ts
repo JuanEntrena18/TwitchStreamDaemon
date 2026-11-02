@@ -1,4 +1,8 @@
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
+export const BACKEND_URL =
+  import.meta.env.VITE_BACKEND_URL ??
+  (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')
+    ? window.location.origin
+    : 'http://localhost:3000');
 export const OVERLAY_BASE_URL = import.meta.env.DEV ? 'http://localhost:5173' : BACKEND_URL;
 
 let _cachedToken: string | undefined;

@@ -152,7 +152,11 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
   app.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
 
   const listenPort = opts?.port ?? parseInt(config.PORT, 10);
-  await app.listen({ port: listenPort, host: '0.0.0.0' });
+  try {
+    await app.listen({ port: listenPort, host: '::' });
+  } catch {
+    await app.listen({ port: listenPort, host: '0.0.0.0' });
+  }
   logger.info({ port: listenPort }, 'Server running');
 
   return app;

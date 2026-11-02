@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useSocket } from '../hooks/useSocket';
 import { OVERLAY_REGISTRY } from '../config/overlayRegistry';
-import { apiGet, apiPost, apiPut, apiDelete } from '../utils/api';
+import { apiGet, apiPost, apiPut, apiDelete, BACKEND_URL } from '../utils/api';
 import styles from './CalendarPanel.module.css';
 
 interface CalendarEvent {
@@ -42,7 +42,7 @@ export function CalendarPanel({ channel }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: '', date: '', startTime: '', duration: 60, game: '', category: '', description: '', color: '#7c3aed' });
 
-  const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  const be = BACKEND_URL;
   const ov = OVERLAY_REGISTRY.find(o => o.id === 'calendar');
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
   const overlayUrl = ov?.filename

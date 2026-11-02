@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useSocket } from '../hooks/useSocket';
 import { useTranslation } from '../i18n/context';
 import { OVERLAY_REGISTRY } from '../config/overlayRegistry';
+import { BACKEND_URL } from '../utils/api';
 import type { SpeedrunState as SharedSpeedrunState } from '@streamdaemon/shared';
 import styles from './SpeedrunPanel.module.css';
 
@@ -81,7 +82,7 @@ export function SpeedrunPanel({ channel }: Props) {
 
   const ov = OVERLAY_REGISTRY.find(o => o.id === 'speedrun');
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
-  const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  const be = BACKEND_URL;
 
   const overlayUrl = ov?.filename
     ? `${overlayBaseUrl}/overlays/${ov.filename}?channel=${channel}&backend=${encodeURIComponent(be)}`
