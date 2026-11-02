@@ -47,7 +47,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
   const app = Fastify({ loggerInstance: logger as FastifyBaseLogger });
 
   const allowedOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'];
-  await app.register(cors, { origin: allowedOrigins, credentials: false });
+  await app.register(cors, { origin: allowedOrigins, credentials: false, methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] });
   await app.register(fastifyMultipart, {
     limits: {
       fileSize: 20 * 1024 * 1024, // 20MB
@@ -99,7 +99,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
 
   // Protect all state-changing endpoints except auth routes and health check
   app.addHook('onRequest', async (req, reply) => {
-    const publicPrefixes = ['/auth/', '/health', '/overlays/', '/socket.io/'];
+    const publicPrefixes = ['/auth/', '/health', '/overlays/', '/socket.io/', '/hud/start-poll'];
     const isPublic = publicPrefixes.some((p) => req.url.startsWith(p));
     if (isPublic) return;
 

@@ -204,10 +204,6 @@ async function setupVibeDaemonHotkeys() {
 
 // ── Main window ───────────────────────────────────────────
 function createMainWindow() {
-  const mainUrl = isDev
-    ? 'http://localhost:5173'
-    : 'http://localhost:3000';
-
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -217,7 +213,7 @@ function createMainWindow() {
     minHeight: 480,
     show: true,
     frame: false,
-    backgroundColor: '#0a0a1a',
+    backgroundColor: '#06050d',
     titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -240,20 +236,6 @@ function createMainWindow() {
     }
   });
 
-  const tryLoadURL = (attempts = 5): void => {
-    mainWindow!.loadURL(mainUrl).catch(() => {
-      if (attempts <= 1) {
-        console.warn('⚠️  loadURL failed, falling back to loadFile');
-        mainWindow!.loadFile(getFrontendPath('index.html')).catch(() => {});
-        return;
-      }
-      console.warn(`⚠️  loadURL failed, retrying in 1500ms… (${attempts - 1} left)`);
-      setTimeout(() => tryLoadURL(attempts - 1), 1500);
-    });
-  };
-
-  tryLoadURL();
-
   if (isDev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
@@ -262,6 +244,21 @@ function createMainWindow() {
     if (input.key === 'F12') {
       mainWindow?.webContents.toggleDevTools();
     }
+  });
+}
+
+function loadMainAppUrl(attempts = 5): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const mainUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
+  mainWindow.loadURL(mainUrl).catch(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (attempts <= 1) {
+      console.warn('⚠️  loadURL failed, falling back to loadFile');
+      mainWindow.loadFile(getFrontendPath('index.html')).catch(() => {});
+      return;
+    }
+    console.warn(`⚠️  loadURL failed, retrying in 1500ms… (${attempts - 1} left)`);
+    setTimeout(() => loadMainAppUrl(attempts - 1), 1500);
   });
 }
 
@@ -590,18 +587,240 @@ app.whenReady().then(async () => {
 
 function getInitialLoadingHtml(): string {
   const locale = (app.getLocale() || '').toLowerCase();
-  let text = 'Loading StreamDaemon...';
+  let statusText = 'Initializing local broadcast engine & AES-256 vault…';
+  let taglineText = 'Local-first broadcast suite, multistream chat & modular overlays.';
   if (locale.startsWith('es')) {
-    text = 'Cargando StreamDaemon...';
+    statusText = 'Inicializando motor local StreamDaemon y bóveda AES-256…';
+    taglineText = 'Plataforma local-first de producción en directo, chat multistream y overlays modulares.';
   } else if (locale.startsWith('fr')) {
-    text = 'Chargement de StreamDaemon...';
+    statusText = 'Initialisation du moteur local StreamDaemon…';
+    taglineText = 'Suite locale de diffusion en direct, chat multistream et overlays modulaires.';
   } else if (locale.startsWith('de')) {
-    text = 'StreamDaemon wird geladen...';
+    statusText = 'Lokale StreamDaemon-Engine wird initialisiert…';
+    taglineText = 'Local-First-Streaming-Suite, Multistream-Chat & modulare Overlays.';
   } else if (locale.startsWith('it')) {
-    text = 'Caricamento di StreamDaemon...';
+    statusText = 'Inizializzazione del motore locale StreamDaemon…';
+    taglineText = 'Suite locale di regia live, chat multistream e overlay modulari.';
   }
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><style>body{margin:0;background:#0a0a1a;color:#fff;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;user-select:none;overflow:hidden}</style></head><body><svg width="48" height="48" viewBox="0 0 24 24" fill="#7c3aed"><path d="M12 4a6 6 0 0 0 6 6V18a6 6 0 0 1-12 0V0a10 10 0 0 1 10 0h-.02a8 8 0 0 0-7.92 0A8 8 0 0 0 12 4zm0 2a4 4 0 0 1 4 4v8a4 4 0 0 1-8 0V6a6 6 0 0 1 6-6z"/><animateTransform attributeName="transform" type="rotate" from="0 0 12 12" to="360 0 12 12" dur="1s" repeatCount="indefinite"/></svg><p style="margin-top:1rem;color:#a4a8b6;font-size:0.95rem;letter-spacing:0.02em">${text}</p></body></html>`;
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #06050d;
+      color: #f8fafc;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      overflow: hidden;
+      position: relative;
+      padding: 2rem 1.25rem 3.5rem;
+    }
+    .titlebar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 32px;
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      padding: 0 0.9rem;
+      background: rgba(6, 5, 13, 0.65);
+      border-bottom: 1px solid rgba(139, 92, 246, 0.12);
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: rgba(203, 213, 225, 0.65);
+      gap: 0.45rem;
+      z-index: 50;
+    }
+    .titlebar-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #a855f7; box-shadow: 0 0 8px #a855f7;
+    }
+    .bg-grid {
+      position: fixed; inset: 0; pointer-events: none;
+      background-image:
+        linear-gradient(to right, rgba(139, 92, 246, 0.045) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(139, 92, 246, 0.045) 1px, transparent 1px);
+      background-size: 44px 44px;
+      -webkit-mask-image: radial-gradient(ellipse 68% 60% at 50% 48%, #000 25%, transparent 80%);
+    }
+    .bg-glow {
+      position: fixed; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 52% 45% at 50% 38%, rgba(124, 58, 237, 0.18) 0%, rgba(6, 182, 212, 0.06) 45%, transparent 75%);
+    }
+    .card {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      max-width: 560px;
+      background: linear-gradient(180deg, rgba(19, 15, 36, 0.88) 0%, rgba(11, 9, 22, 0.95) 100%);
+      border: 1px solid rgba(168, 85, 247, 0.22);
+      border-radius: 18px;
+      padding: 1.85rem 2rem 1.65rem;
+      box-shadow: 0 28px 70px -15px rgba(0, 0, 0, 0.85), 0 0 40px -10px rgba(124, 58, 237, 0.22);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.35rem;
+      overflow: hidden;
+    }
+    .top-bar {
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #9146ff 0%, #c084fc 35%, #22d3ee 70%, #ff0033 100%);
+    }
+    .header-row {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding-bottom: 0.75rem;
+    }
+    .eyebrow {
+      font-family: 'Cascadia Code', Consolas, monospace;
+      font-size: 0.64rem; font-weight: 700; letter-spacing: 0.14em;
+      color: rgba(192, 132, 252, 0.85);
+    }
+    .ver {
+      font-family: 'Cascadia Code', Consolas, monospace;
+      font-size: 0.66rem; font-weight: 700; color: #22d3ee;
+      background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.3);
+      padding: 0.16rem 0.52rem; border-radius: 999px;
+    }
+    .stage {
+      position: relative; width: 144px; height: 144px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .orb-glow {
+      position: absolute; inset: 12px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(168, 85, 247, 0.32) 0%, rgba(6, 182, 212, 0.08) 55%, transparent 75%);
+      filter: blur(8px);
+    }
+    .orb-outer {
+      position: absolute; inset: 4px; border-radius: 50%;
+      border: 1px dashed rgba(192, 132, 252, 0.28);
+      animation: spin 18s linear infinite;
+    }
+    .orb-inner {
+      position: absolute; inset: 14px; border-radius: 50%;
+      border: 1.5px solid transparent;
+      border-top-color: rgba(34, 211, 238, 0.65);
+      border-bottom-color: rgba(168, 85, 247, 0.65);
+      animation: spin-rev 7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin-rev { to { transform: rotate(-360deg); } }
+    .pill {
+      position: absolute; bottom: -4px;
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      font-family: 'Cascadia Code', Consolas, monospace;
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em;
+      padding: 0.2rem 0.6rem; border-radius: 999px;
+      background: rgba(15, 10, 30, 0.95); border: 1px solid rgba(168, 85, 247, 0.4);
+      color: #e9d5ff;
+    }
+    .pill-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: #c084fc; box-shadow: 0 0 8px #c084fc;
+    }
+    .brand { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+    .wordmark { margin: 0; font-size: 2.15rem; font-weight: 800; letter-spacing: -0.035em; color: #fff; }
+    .accent {
+      background: linear-gradient(135deg, #c084fc 0%, #818cf8 55%, #22d3ee 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .tagline { margin: 0; max-width: 430px; font-size: 0.82rem; line-height: 1.45; color: rgba(203, 213, 225, 0.72); }
+    .progress-box {
+      width: 100%; display: flex; flex-direction: column; gap: 0.5rem;
+      background: rgba(5, 4, 12, 0.55); border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 11px; padding: 0.75rem 0.9rem;
+    }
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .status-left { display: flex; align-items: center; gap: 0.5rem; font-size: 0.76rem; color: rgba(226, 232, 240, 0.88); }
+    .pulse {
+      width: 7px; height: 7px; border-radius: 50%; background: #a855f7; box-shadow: 0 0 10px #a855f7;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .track { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.07); border-radius: 999px; overflow: hidden; }
+    .fill {
+      height: 100%; width: 38%; border-radius: 999px;
+      background: linear-gradient(90deg, #7c3aed 0%, #a855f7 55%, #22d3ee 100%);
+      box-shadow: 0 0 14px rgba(168, 85, 247, 0.65);
+      animation: boot-bar 3.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes boot-bar { from { width: 12%; } to { width: 88%; } }
+  </style>
+</head>
+<body>
+  <div class="titlebar"><span class="titlebar-dot"></span><span>STREAMDAEMON STUDIO</span></div>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+  <main class="card">
+    <div class="top-bar"></div>
+    <div class="header-row">
+      <span class="eyebrow">CYBER HAUTE COUTURE · BROADCAST SUITE</span>
+      <span class="ver">v0.7.0</span>
+    </div>
+    <div class="stage">
+      <div class="orb-glow"></div>
+      <div class="orb-outer"></div>
+      <div class="orb-inner"></div>
+      <svg viewBox="0 0 120 120" width="92" height="92" xmlns="http://www.w3.org/2000/svg" style="position:relative;z-index:2;filter:drop-shadow(0 8px 22px rgba(124,58,237,0.45))">
+        <defs>
+          <linearGradient id="sdOuter" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#c084fc" />
+            <stop offset="45%" stop-color="#7c3aed" />
+            <stop offset="100%" stop-color="#06b6d4" />
+          </linearGradient>
+          <linearGradient id="sdCore" x1="15%" y1="10%" x2="85%" y2="90%">
+            <stop offset="0%" stop-color="#1e1338" />
+            <stop offset="55%" stop-color="#0f0a1e" />
+            <stop offset="100%" stop-color="#070510" />
+          </linearGradient>
+          <linearGradient id="sdHorn" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" />
+            <stop offset="65%" stop-color="#e9d5ff" />
+            <stop offset="100%" stop-color="#a855f7" />
+          </linearGradient>
+          <linearGradient id="sdVisor" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#22d3ee" />
+            <stop offset="50%" stop-color="#a855f7" />
+            <stop offset="100%" stop-color="#f43f5e" />
+          </linearGradient>
+        </defs>
+        <polygon points="60,6 106,32 106,88 60,114 14,88 14,32" fill="url(#sdOuter)" />
+        <polygon points="60,11 101,35 101,85 60,109 19,85 19,35" fill="url(#sdCore)" />
+        <polygon points="60,16 96,37 96,83 60,104 24,83 24,37" fill="none" stroke="rgba(192, 132, 252, 0.25)" stroke-width="1.2" />
+        <path d="M 47 28 A 18 18 0 0 1 73 28" fill="none" stroke="#22d3ee" stroke-width="2.2" stroke-linecap="round" opacity="0.85" />
+        <circle cx="60" cy="31" r="2.6" fill="#22d3ee" />
+        <path d="M 30 26 L 46 42 L 54 38 L 60 43 L 66 38 L 74 42 L 90 26 L 86 52 L 91 62 L 78 86 L 60 98 L 42 86 L 29 62 L 34 52 Z" fill="url(#sdHorn)" />
+        <path d="M 39 50 L 53 55 L 60 51 L 67 55 L 81 50 L 83 63 L 73 81 L 60 90 L 47 81 L 37 63 Z" fill="#120b24" />
+        <polygon points="41,57 56,62 54,68 39,63" fill="url(#sdVisor)" />
+        <polygon points="79,57 64,62 66,68 81,63" fill="url(#sdVisor)" />
+        <polygon points="43,58.5 53,62 52,64.5 42,61" fill="#ffffff" opacity="0.9" />
+        <polygon points="77,58.5 67,62 68,64.5 78,61" fill="#ffffff" opacity="0.9" />
+        <path d="M 48 75 L 54 71 L 60 76 L 66 71 L 72 75 L 67 83 L 60 86 L 53 83 Z" fill="url(#sdOuter)" opacity="0.95" />
+      </svg>
+      <span class="pill"><span class="pill-dot"></span>BOOTING ENGINE</span>
+    </div>
+    <div class="brand">
+      <h1 class="wordmark">Stream<span class="accent">Daemon</span></h1>
+      <p class="tagline">${taglineText}</p>
+    </div>
+    <div class="progress-box">
+      <div class="status-row">
+        <div class="status-left"><span class="pulse"></span><span>${statusText}</span></div>
+      </div>
+      <div class="track"><div class="fill"></div></div>
+    </div>
+  </main>
+</body>
+</html>`;
   return `data:text/html;base64,${Buffer.from(html, 'utf-8').toString('base64')}`;
 }
 
@@ -614,8 +833,7 @@ function getInitialLoadingHtml(): string {
 
   await startBackend();
   if (backendReady && mainWindow) {
-    const mainUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
-    mainWindow.loadURL(mainUrl);
+    loadMainAppUrl();
   }
 
   setupVibeDaemonHotkeys();

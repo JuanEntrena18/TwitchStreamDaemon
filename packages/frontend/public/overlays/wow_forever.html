@@ -670,7 +670,9 @@
     margin-top: 6px;
     font-style: italic;
   }
+  html.widget-root { width: 100% !important; height: 100% !important; }
 </style>
+<script src="/overlays/js/sd-layout.js"></script>
 </head>
 <body>
 
@@ -812,6 +814,7 @@ document.getElementById('broadcaster-name').textContent = CHANNEL || 'Champion';
 (function setupModularView() {
   if (WIDGET_ONLY) {
     document.body.classList.add('widget-standalone');
+    document.documentElement.classList.add('widget-root');
     document.body.setAttribute('data-active-widget', WIDGET_ONLY);
     const target = document.querySelector(`[data-widget-id="${WIDGET_ONLY}"]`);
     if (target) target.classList.add('widget-active');
@@ -825,35 +828,18 @@ document.getElementById('broadcaster-name').textContent = CHANNEL || 'Champion';
 
 function loadSavedPositions() {
   if (WIDGET_ONLY) return;
-  try {
-    const raw = localStorage.getItem(POS_STORAGE_KEY);
-    if (!raw) return;
-    const map = JSON.parse(raw);
-    Object.entries(map).forEach(([wid, pos]) => {
-      const el = document.querySelector(`[data-widget-id="${wid}"]`);
-      if (!el || !pos) return;
-      el.style.left = `${pos.left}px`;
-      el.style.top = `${pos.top}px`;
-      el.style.right = 'auto';
-      el.style.bottom = 'auto';
-      if (wid === 'alerts') el.style.transform = 'none';
-    });
-  } catch {}
+  SDLayout.init({ overlayId: 'wow_forever', channel: CHANNEL, backend: BACKEND_URL, edit: EDIT_MODE });
 }
 
 function saveWidgetPosition(wid, left, top) {
-  try {
-    const raw = localStorage.getItem(POS_STORAGE_KEY);
-    const map = raw ? JSON.parse(raw) : {};
-    map[wid] = { left: Math.round(left), top: Math.round(top) };
-    localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(map));
-  } catch {}
+  SDLayout.setPosition(wid, left, top);
 }
 
 function initEditMode() {
   loadSavedPositions();
   if (!EDIT_MODE || WIDGET_ONLY) return;
   document.body.classList.add('edit-mode');
+  SDLayout.mountToolbar();
 
   document.getElementById('btn-test-alert').addEventListener('click', () => {
     enqueueAlert({
@@ -865,8 +851,7 @@ function initEditMode() {
   });
 
   document.getElementById('btn-reset-pos').addEventListener('click', () => {
-    localStorage.removeItem(POS_STORAGE_KEY);
-    location.reload();
+    SDLayout.reset().then(() => location.reload());
   });
 
   document.querySelectorAll('[data-widget-id]').forEach(el => {

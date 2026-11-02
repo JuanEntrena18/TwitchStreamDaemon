@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { LayoutSaveSchema, LayoutUpdateSchema } from '@streamdaemon/shared';
 import type { Layout } from '@streamdaemon/shared';
+import { getIO } from '../socket/index.js';
 
 const DATA_DIR = path.join(process.env.DATA_DIR || path.resolve('data'), 'layouts');
 
@@ -144,8 +145,57 @@ ${widgetHtml}
 </html>`;
 }
 
+// ── Posiciones del editor Drag & Drop de overlays modulares ──────────
+const POSITIONS_DIR = path.join(process.env.DATA_DIR || path.resolve('data'), 'overlay-positions');
+const POSITION_KEY_RE = /^[a-z0-9_-]{1,80}$/;
+const WIDGET_ID_RE = /^[a-z0-9-]{1,40}$/;
+
+type OverlayPositions = Record<string, { left: number; top: number }>;
+
+function parsePositions(body: unknown): OverlayPositions | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const raw = (body as { positions?: unknown }).positions;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > 40) return null;
+  const out: OverlayPositions = {};
+  for (const [id, val] of entries) {
+    if (!WIDGET_ID_RE.test(id) || typeof val !== 'object' || val === null) return null;
+    const { left, top } = val as { left?: unknown; top?: unknown };
+    if (typeof left !== 'number' || typeof top !== 'number' || !Number.isFinite(left) || !Number.isFinite(top)) return null;
+    out[id] = { left: Math.round(left), top: Math.round(top) };
+  }
+  return out;
+}
+
+function setupOverlayPositions(app: FastifyInstance) {
+  app.get('/overlays/layout/:key', async (req, reply) => {
+    const { key } = req.params as { key: string };
+    if (!POSITION_KEY_RE.test(key)) return reply.status(400).send({ error: 'Invalid key' });
+    const file = path.join(POSITIONS_DIR, `${key}.json`);
+    if (!fs.existsSync(file)) return { positions: {} };
+    try {
+      return { positions: JSON.parse(fs.readFileSync(file, 'utf-8')) as OverlayPositions };
+    } catch {
+      return { positions: {} };
+    }
+  });
+
+  app.put('/overlays/layout/:key', async (req, reply) => {
+    const { key } = req.params as { key: string };
+    if (!POSITION_KEY_RE.test(key)) return reply.status(400).send({ error: 'Invalid key' });
+    const positions = parsePositions(req.body);
+    if (!positions) return reply.status(400).send({ error: 'Invalid positions' });
+    if (!fs.existsSync(POSITIONS_DIR)) fs.mkdirSync(POSITIONS_DIR, { recursive: true });
+    fs.writeFileSync(path.join(POSITIONS_DIR, `${key}.json`), JSON.stringify(positions), 'utf-8');
+    try { getIO().emit('overlay:positions-updated', { key, positions }); } catch { /* socket not ready */ }
+    return { ok: true };
+  });
+}
+
 export function setupLayouts(app: FastifyInstance) {
   ensureDir();
+  setupOverlayPositions(app);
 
   // List all layouts
   app.get('/layouts', async () => {

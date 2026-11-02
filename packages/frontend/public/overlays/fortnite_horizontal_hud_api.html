@@ -68,7 +68,7 @@
   /* Animación de rebote cuando cambia un valor */
   @keyframes stat-pop {
     0%   { transform: scale(1); }
-    40%  { transform: scale(1.22); filter: brightness(1.3); }
+    40%  { transform: scale(1.12); }
     100% { transform: scale(1); }
   }
   .pop-anim {
@@ -760,7 +760,9 @@
   .widget-hidden {
     display: none !important;
   }
+  html.widget-root { width: 100% !important; height: 100% !important; }
 </style>
+<script src="/overlays/js/sd-layout.js"></script>
 </head>
 <body>
 
@@ -912,8 +914,8 @@ const params          = new URLSearchParams(location.search);
 const CHANNEL         = params.get('channel') || '';
 const DEMO_MODE       = params.get('demo') === 'true';
 const BACKEND_URL     = params.get('backend') || 'http://localhost:3000';
-const EPIC_USER       = params.get('epic') || '';
-const STATS_MODE      = params.get('mode') || 'overall';
+let   EPIC_USER       = params.get('epic') || '';
+let   STATS_MODE      = params.get('mode') || 'overall';
 const LAYOUT          = params.get('layout') || 'stats'; // stats, chat-left, chat-right
 const WIDGET_MODE     = params.get('widget') || ''; // stream-stats | career-stats | chat | recent-follow | info-bar | alerts
 const HIDE_LIST       = (params.get('hide') || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -933,6 +935,7 @@ if (CHANNEL) {
 
   if (WIDGET_MODE) {
     document.body.classList.add('widget-standalone');
+    document.documentElement.classList.add('widget-root');
     document.body.setAttribute('data-widget', WIDGET_MODE);
 
     allWidgets.forEach(el => {
@@ -961,37 +964,16 @@ if (CHANNEL) {
   }
 })();
 
-// Interactive Drag & Drop Positioning (saved per channel in localStorage)
+// Interactive Drag & Drop Positioning (persistido en backend vía SDLayout, visible en OBS)
 (function setupInteractiveDrag() {
   if (WIDGET_MODE) return;
-  const storageKey = 'sd_fn_cartoon_pos_' + (CHANNEL || 'default');
-
-  function applySavedPositions() {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      Object.keys(saved).forEach(id => {
-        const el = document.querySelector(`[data-widget-id="${id}"]`);
-        if (el && saved[id]) {
-          el.style.left = saved[id].left;
-          el.style.top = saved[id].top;
-          el.style.right = 'auto';
-          el.style.bottom = 'auto';
-          if (id === 'alerts') {
-            el.style.transform = 'none';
-          }
-        }
-      });
-    } catch {}
-  }
-
-  applySavedPositions();
+  SDLayout.init({ overlayId: 'fortnite_cartoon', channel: CHANNEL, backend: BACKEND_URL, edit: INTERACTIVE_MODE });
 
   if (!INTERACTIVE_MODE) return;
 
   document.body.classList.add('interactive-edit');
   document.getElementById('edit-toolbar')?.classList.add('visible');
+  SDLayout.mountToolbar();
 
   let activeEl = null;
   let startX = 0, startY = 0, origLeft = 0, origTop = 0;
@@ -1017,29 +999,20 @@ if (CHANNEL) {
 
   window.addEventListener('mousemove', (e) => {
     if (!activeEl) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    activeEl.style.left = Math.round(origLeft + dx) + 'px';
-    activeEl.style.top = Math.round(origTop + dy) + 'px';
+    activeEl.style.left = Math.round(origLeft + e.clientX - startX) + 'px';
+    activeEl.style.top = Math.round(origTop + e.clientY - startY) + 'px';
   });
 
   window.addEventListener('mouseup', () => {
     if (!activeEl) return;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const saved = raw ? JSON.parse(raw) : {};
-      const id = activeEl.getAttribute('data-widget-id');
-      if (id) {
-        saved[id] = { left: activeEl.style.left, top: activeEl.style.top };
-        localStorage.setItem(storageKey, JSON.stringify(saved));
-      }
-    } catch {}
+    const id = activeEl.getAttribute('data-widget-id');
+    const rect = activeEl.getBoundingClientRect();
+    if (id) SDLayout.setPosition(id, rect.left, rect.top);
     activeEl = null;
   });
 
   document.getElementById('btn-reset-pos')?.addEventListener('click', () => {
-    localStorage.removeItem(storageKey);
-    location.reload();
+    SDLayout.reset().then(() => location.reload());
   });
 
   document.getElementById('btn-test-alert')?.addEventListener('click', () => {
@@ -1110,6 +1083,16 @@ function applyHud(data) {
 }
 
 async function fetchFnStats() {
+  if (!EPIC_USER) {
+    try {
+      const cfgRes = await fetch(`${BACKEND_URL}/fortnite/config`);
+      if (cfgRes.ok) {
+        const cfg = await cfgRes.json();
+        if (cfg.epicUsername) EPIC_USER = cfg.epicUsername;
+        if (cfg.statsMode) STATS_MODE = cfg.statsMode;
+      }
+    } catch {}
+  }
   if (!EPIC_USER) return;
   try {
     const r = await fetch(`${BACKEND_URL}/fortnite/stats/${encodeURIComponent(EPIC_USER)}?mode=${STATS_MODE}`);
