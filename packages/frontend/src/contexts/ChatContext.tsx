@@ -5,6 +5,7 @@ const MAX_MSGS = 100;
 
 export interface ChatMsg {
   id: string;
+  platform?: 'twitch' | 'youtube';
   user: {
     id: string;
     displayName: string;
@@ -13,6 +14,12 @@ export interface ChatMsg {
   };
   text: string;
   timestamp: number;
+  superChat?: {
+    amountMicros: number;
+    currency: string;
+    formattedAmount: string;
+    tierColor: string;
+  };
 }
 
 interface ChatContextValue {

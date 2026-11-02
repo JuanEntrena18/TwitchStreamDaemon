@@ -49,8 +49,63 @@ const ChatMessage = memo(function ChatMessage({
       onMouseEnter={() => onHover(msg.id)}
       onMouseLeave={() => onHover(null)}
       data-message-id={msg.id}
+      style={
+        msg.superChat
+          ? {
+              borderLeft: `3px solid ${msg.superChat.tierColor}`,
+              background: 'rgba(255, 0, 51, 0.08)',
+            }
+          : undefined
+      }
     >
       <div className="flex-row flex-wrap" style={{ gap: '0.35rem' }}>
+        {msg.platform === 'youtube' ? (
+          <span
+            title="YouTube Live"
+            style={{
+              fontSize: '0.6rem',
+              fontWeight: 800,
+              padding: '0.05rem 0.35rem',
+              borderRadius: 4,
+              background: 'rgba(255, 0, 51, 0.2)',
+              border: '1px solid rgba(255, 0, 51, 0.45)',
+              color: '#ff4d6d',
+              letterSpacing: '0.04em',
+            }}
+          >
+            YT
+          </span>
+        ) : (
+          <span
+            title="Twitch"
+            style={{
+              fontSize: '0.6rem',
+              fontWeight: 800,
+              padding: '0.05rem 0.35rem',
+              borderRadius: 4,
+              background: 'rgba(145, 71, 255, 0.18)',
+              border: '1px solid rgba(145, 71, 255, 0.4)',
+              color: '#c4b5fd',
+              letterSpacing: '0.04em',
+            }}
+          >
+            TW
+          </span>
+        )}
+        {msg.superChat && (
+          <span
+            style={{
+              fontSize: '0.65rem',
+              fontWeight: 800,
+              padding: '0.05rem 0.4rem',
+              borderRadius: 4,
+              background: msg.superChat.tierColor,
+              color: '#000',
+            }}
+          >
+            💸 {msg.superChat.formattedAmount}
+          </span>
+        )}
         {msg.user.badges?.map((b) => (
           <span key={b} className={styles.badgeIcon}>{badgeIcon(b)}</span>
         ))}

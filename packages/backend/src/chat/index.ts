@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getIO } from '../socket/index.js';
 import { authProvider, currentUser } from '../auth/index.js';
+import { currentYouTubeUser, sendYouTubeChatMessage } from '../youtube/index.js';
 import { checkCustomCommand } from '../commands/index.js';
 import { checkMessage } from '../security/index.js';
 import type { enterGiveaway, addTickets } from '../giveaways/index.js';
@@ -136,6 +137,7 @@ export async function setupChat() {
     const io = getIO();
     io.to(`channel:${channelName}`).emit('chat:message', {
       id: msg.id,
+      platform: 'twitch',
       user: {
         id: msg.userInfo.userId,
         displayName: msg.userInfo.displayName,
@@ -273,26 +275,44 @@ export async function leaveChannel(channel: string) {
 }
 
 export async function sendMessage(channel: string, message: string) {
-  if (!chatClient) {
-    logger.warn('Chat client not ready, cannot send message');
+  let sentAny = false;
+
+  if (chatClient) {
+    try {
+      await chatClient.say(channel, message);
+      sentAny = true;
+    } catch (err) {
+      logger.error({ channel, err }, 'Failed to send Twitch message');
+    }
+  }
+
+  if (currentYouTubeUser) {
+    try {
+      const ytSent = await sendYouTubeChatMessage(message);
+      if (ytSent) sentAny = true;
+    } catch (err) {
+      logger.error({ channel, err }, 'Failed to send YouTube message');
+    }
+  }
+
+  if (!chatClient && !currentYouTubeUser) {
+    logger.warn('Neither Twitch nor YouTube chat client ready, cannot send message');
     return;
   }
-  try {
-    await chatClient.say(channel, message);
-    const io = getIO();
-    io.to(`channel:${channel}`).emit('chat:message', {
-      id: `send-${Date.now()}`,
-      user: {
-        id: currentUser?.id ?? 'self',
-        displayName: currentUser?.displayName ?? 'StreamDaemon',
-        color: '#7c3aed',
-        badges: ['broadcaster'],
-      },
-      text: message,
-      timestamp: Date.now(),
-    });
-    logger.debug({ channel, message: message.substring(0, 50) }, 'Message sent');
-  } catch (err) {
-    logger.error({ channel, err }, 'Failed to send message');
-  }
+
+  const activeUser = currentUser ?? currentYouTubeUser;
+  const io = getIO();
+  io.to(`channel:${channel}`).emit('chat:message', {
+    id: `send-${Date.now()}`,
+    platform: currentUser ? 'twitch' : 'youtube',
+    user: {
+      id: activeUser?.id ?? 'self',
+      displayName: activeUser?.displayName ?? 'StreamDaemon',
+      color: currentUser ? '#7c3aed' : '#ff0033',
+      badges: ['broadcaster'],
+    },
+    text: message,
+    timestamp: Date.now(),
+  });
+  logger.debug({ channel, sentAny, message: message.substring(0, 50) }, 'Message sent');
 }

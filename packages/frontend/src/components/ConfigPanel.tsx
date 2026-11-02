@@ -19,8 +19,33 @@ interface Props {
 export function ConfigPanel({ channel, alwaysOnTop, toggleAlwaysOnTop }: Props) {
   const { t, localeSetting, setLocale } = useTranslation();
   const { connected } = useSocket();
-  const { authenticated, user, loading: authLoading, login, logout, deviceState, cancelDeviceLogin } = useAuthStatus();
+  const {
+    twitchAuthenticated,
+    youtubeAuthenticated,
+    youtubeAuthMode,
+    twitchUser,
+    youtubeUser,
+    youtubeCredentials,
+    loading: authLoading,
+    login,
+    logout,
+    deviceState,
+    cancelDeviceLogin,
+    saveYouTubeCredentials,
+    quickConnectYouTube,
+    startYouTubeOAuth,
+    logoutYouTube,
+    simulateYouTubeEvent,
+  } = useAuthStatus();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const [ytTab, setYtTab] = useState<'apikey' | 'oauth'>('apikey');
+  const [ytChannelHandle, setYtChannelHandle] = useState('');
+  const [ytApiKey, setYtApiKey] = useState('');
+  const [ytClientId, setYtClientId] = useState('');
+  const [ytClientSecret, setYtClientSecret] = useState('');
+  const [ytBusy, setYtBusy] = useState(false);
+  const [ytFeedback, setYtFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [uiZoom, setUiZoom] = useState(() => {
     try { return localStorage.getItem('sf-ui-zoom') || 'auto'; } catch { return 'auto'; }
@@ -162,23 +187,23 @@ export function ConfigPanel({ channel, alwaysOnTop, toggleAlwaysOnTop }: Props) 
         <div className="flex-row" style={{ gap: '1rem' }}>
           <div style={{
             width: 48, height: 48, borderRadius: 12, flexShrink: 0,
-            background: authenticated ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.12)',
-            border: `1px solid ${authenticated ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`,
+            background: twitchAuthenticated ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.12)',
+            border: `1px solid ${twitchAuthenticated ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem',
           }}>
-            {authenticated ? '✅' : '🔌'}
+            {twitchAuthenticated ? '✅' : '🔌'}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--sf-text)' }}>
-              {authenticated && user ? user.displayName : t('config.noConectado')}
+              {twitchAuthenticated && twitchUser ? twitchUser.displayName : t('config.noConectado')}
             </div>
             <div className="text-xs text-dim">
-              {authenticated
+              {twitchAuthenticated
                 ? t('config.sesionActiva')
                 : t('config.conectaTwitch')}
             </div>
           </div>
-          {!authLoading && !authenticated && (
+          {!authLoading && !twitchAuthenticated && (
             <div className="flex-row--gap-sm" style={{ flexShrink: 0 }}>
               <button
                 onClick={login}
@@ -196,7 +221,7 @@ export function ConfigPanel({ channel, alwaysOnTop, toggleAlwaysOnTop }: Props) 
               </button>
             </div>
           )}
-          {!authLoading && authenticated && (
+          {!authLoading && twitchAuthenticated && (
             <button
               onClick={() => setShowLogoutConfirm(true)}
               className="sf-btn sf-btn-ghost"
@@ -295,11 +320,303 @@ export function ConfigPanel({ channel, alwaysOnTop, toggleAlwaysOnTop }: Props) 
       </div>
 
       {/* ── Re-auth note ── */}
-      {authenticated && (
+      {twitchAuthenticated && (
         <div className={styles.reauthNote}>
           {t('config.infoEventsub')}
         </div>
       )}
+
+      {/* ── YouTube Live Integration ── */}
+      <div className="glass-card sf-card">
+        <div className="flex-between" style={{ marginBottom: '0.35rem' }}>
+          <p className="sf-section-title" style={{ margin: 0 }}>YouTube Live · Emisiones en Directo & Multistream</p>
+          <span
+            className="sf-badge"
+            style={{
+              background: youtubeAuthenticated ? 'rgba(16,185,129,0.15)' : 'rgba(255,0,51,0.12)',
+              color: youtubeAuthenticated ? 'var(--sf-success)' : '#ff4d6d',
+              border: `1px solid ${youtubeAuthenticated ? 'rgba(16,185,129,0.3)' : 'rgba(255,0,51,0.3)'}`,
+              fontSize: '0.7rem',
+            }}
+          >
+            {youtubeAuthenticated
+              ? `CONECTADO (${youtubeAuthMode === 'oauth' ? 'OAuth 2.0' : 'API Key'})`
+              : 'LISTO PARA CONECTAR'}
+          </span>
+        </div>
+        <p className="text-sm text-muted" style={{ marginBottom: '1rem', lineHeight: 1.5 }}>
+          Conecta tu canal de YouTube para recibir chat en vivo, Super Chats, miembros del canal, suscriptores y espectadores combinados en todos los +57 overlays, alertas, sorteos y avatares.
+        </p>
+
+        {/* Active YouTube connection status */}
+        <div className="flex-row" style={{ gap: '1rem', marginBottom: '1rem' }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 12, flexShrink: 0,
+            background: youtubeAuthenticated ? 'rgba(16,185,129,0.15)' : 'rgba(255,0,51,0.12)',
+            border: `1px solid ${youtubeAuthenticated ? 'rgba(16,185,129,0.3)' : 'rgba(255,0,51,0.28)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem',
+          }}>
+            {youtubeAuthenticated ? '▶️' : '📺'}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--sf-text)' }}>
+              {youtubeAuthenticated && youtubeUser ? youtubeUser.displayName : 'Canal de YouTube no conectado'}
+            </div>
+            <div className="text-xs text-dim">
+              {youtubeAuthenticated && youtubeUser
+                ? `ID/Handle: ${youtubeUser.login} · Modo ${youtubeAuthMode === 'oauth' ? 'OAuth 2.0 Completo' : 'Lectura en vivo con API Key'}`
+                : 'Configura tu API Key de YouTube Data v3 o credenciales OAuth 2.0 abajo'}
+            </div>
+          </div>
+          {youtubeAuthenticated && (
+            <button
+              type="button"
+              onClick={() => logoutYouTube()}
+              className="sf-btn sf-btn-ghost"
+              style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', color: 'var(--sf-text-3)', whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {t('config.desconectar')}
+            </button>
+          )}
+        </div>
+
+        {/* Mode Tabs */}
+        <div className="flex-row--gap-sm" style={{ marginBottom: '0.85rem' }}>
+          <button
+            type="button"
+            onClick={() => { setYtTab('apikey'); setYtFeedback(null); }}
+            className={`sf-btn ${ytTab === 'apikey' ? 'sf-btn-primary' : 'sf-btn-ghost'}`}
+            style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}
+          >
+            ⚡ Conexión Rápida (API Key + @Canal)
+          </button>
+          <button
+            type="button"
+            onClick={() => { setYtTab('oauth'); setYtFeedback(null); }}
+            className={`sf-btn ${ytTab === 'oauth' ? 'sf-btn-primary' : 'sf-btn-ghost'}`}
+            style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}
+          >
+            🔐 OAuth 2.0 Completo (Google Cloud)
+          </button>
+        </div>
+
+        {ytTab === 'apikey' ? (
+          <div className="flex-col flex-col--gap-sm">
+            <div>
+              <label className="sf-label text-xs" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span>YouTube Data API v3 Key</span>
+                {youtubeCredentials?.hasApiKey && (
+                  <span style={{ color: 'var(--sf-success)' }}>✓ Guardada ({youtubeCredentials.apiKeyPreview})</span>
+                )}
+              </label>
+              <input
+                type="password"
+                value={ytApiKey}
+                onChange={(e) => setYtApiKey(e.target.value)}
+                placeholder={youtubeCredentials?.hasApiKey ? 'Dejar vacío para usar la API Key guardada o introduce una nueva...' : 'AIzaSy...'}
+                className="sf-input text-xs"
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div>
+              <label className="sf-label text-xs" style={{ display: 'block', marginBottom: '0.25rem' }}>
+                Canal de YouTube (@handle o ID UC...)
+              </label>
+              <div className="flex-row--gap-sm">
+                <input
+                  type="text"
+                  value={ytChannelHandle}
+                  onChange={(e) => setYtChannelHandle(e.target.value)}
+                  placeholder="@TuCanal o UCxxxxxxxxxxxx"
+                  className="sf-input text-xs"
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  disabled={ytBusy}
+                  onClick={async () => {
+                    if (!ytChannelHandle.trim()) {
+                      setYtFeedback({ type: 'err', text: 'Introduce el @handle o ID de tu canal de YouTube.' });
+                      return;
+                    }
+                    setYtBusy(true);
+                    setYtFeedback(null);
+                    try {
+                      await quickConnectYouTube(ytChannelHandle.trim(), ytApiKey.trim() || undefined);
+                      setYtChannelHandle('');
+                      setYtApiKey('');
+                      setYtFeedback({ type: 'ok', text: '¡Canal de YouTube conectado correctamente!' });
+                    } catch (err) {
+                      setYtFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al conectar YouTube' });
+                    } finally {
+                      setYtBusy(false);
+                    }
+                  }}
+                  className="sf-btn"
+                  style={{
+                    background: 'linear-gradient(135deg, #ff0033 0%, #c9002b 100%)',
+                    color: '#fff',
+                    fontSize: '0.78rem',
+                    padding: '0.45rem 1rem',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {ytBusy ? 'Conectando...' : 'Conectar YouTube'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-col flex-col--gap-sm">
+            <div>
+              <label className="sf-label text-xs" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span>Google OAuth Client ID</span>
+                {youtubeCredentials?.hasClientId && (
+                  <span style={{ color: 'var(--sf-success)' }}>✓ Guardado ({youtubeCredentials.clientIdPreview})</span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={ytClientId}
+                onChange={(e) => setYtClientId(e.target.value)}
+                placeholder={youtubeCredentials?.hasClientId ? 'Dejar vacío para usar el Client ID guardado...' : '123456789-xxx.apps.googleusercontent.com'}
+                className="sf-input text-xs"
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div>
+              <label className="sf-label text-xs" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span>Google OAuth Client Secret</span>
+                {youtubeCredentials?.hasClientSecret && (
+                  <span style={{ color: 'var(--sf-success)' }}>✓ Guardado</span>
+                )}
+              </label>
+              <input
+                type="password"
+                value={ytClientSecret}
+                onChange={(e) => setYtClientSecret(e.target.value)}
+                placeholder={youtubeCredentials?.hasClientSecret ? 'Dejar vacío para usar el Secret guardado...' : 'GOCSPX-...'}
+                className="sf-input text-xs"
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div className="text-xs text-dim" style={{ padding: '0.45rem 0.65rem', background: 'rgba(0,0,0,0.22)', borderRadius: 6, border: '1px solid var(--sf-border)' }}>
+              Redirect URI en Google Cloud Console:{' '}
+              <code style={{ color: 'var(--sf-primary-light)' }}>
+                {youtubeCredentials?.redirectUri || 'http://localhost:3000/auth/youtube/callback'}
+              </code>
+            </div>
+
+            <div className="flex-row--gap-sm">
+              <button
+                type="button"
+                disabled={ytBusy}
+                onClick={async () => {
+                  setYtBusy(true);
+                  setYtFeedback(null);
+                  try {
+                    await saveYouTubeCredentials({
+                      clientId: ytClientId.trim() || undefined,
+                      clientSecret: ytClientSecret.trim() || undefined,
+                      apiKey: ytApiKey.trim() || undefined,
+                    });
+                    setYtClientId('');
+                    setYtClientSecret('');
+                    setYtFeedback({ type: 'ok', text: 'Credenciales de YouTube guardadas y cifradas.' });
+                  } catch (err) {
+                    setYtFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al guardar credenciales' });
+                  } finally {
+                    setYtBusy(false);
+                  }
+                }}
+                className="sf-btn sf-btn-ghost"
+                style={{ fontSize: '0.78rem', padding: '0.45rem 0.85rem' }}
+              >
+                Guardar Credenciales
+              </button>
+              <button
+                type="button"
+                disabled={ytBusy}
+                onClick={async () => {
+                  setYtBusy(true);
+                  setYtFeedback(null);
+                  try {
+                    await startYouTubeOAuth({
+                      clientId: ytClientId.trim() || undefined,
+                      clientSecret: ytClientSecret.trim() || undefined,
+                    });
+                    setYtFeedback({ type: 'ok', text: 'Se abrió la ventana de autorización de Google en tu navegador.' });
+                  } catch (err) {
+                    setYtFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al iniciar OAuth' });
+                  } finally {
+                    setYtBusy(false);
+                  }
+                }}
+                className="sf-btn"
+                style={{
+                  background: 'linear-gradient(135deg, #ff0033 0%, #c9002b 100%)',
+                  color: '#fff',
+                  fontSize: '0.78rem',
+                  padding: '0.45rem 1rem',
+                  flex: 1,
+                  justifyContent: 'center',
+                }}
+              >
+                Autorizar con Google / YouTube
+              </button>
+            </div>
+          </div>
+        )}
+
+        {ytFeedback && (
+          <p
+            className="text-xs"
+            style={{
+              marginTop: '0.6rem',
+              color: ytFeedback.type === 'ok' ? 'var(--sf-success)' : 'var(--sf-danger)',
+            }}
+          >
+            {ytFeedback.text}
+          </p>
+        )}
+
+        {/* YouTube Live Alert & Chat Simulator */}
+        <div style={{ marginTop: '1.1rem', paddingTop: '0.9rem', borderTop: '1px solid var(--sf-border)' }}>
+          <div className="text-xs" style={{ fontWeight: 600, color: 'var(--sf-text-2)', marginBottom: '0.5rem' }}>
+            🧪 Probar Eventos de YouTube en Overlays y Chat (OBS / Dashboard)
+          </div>
+          <div className="flex-row flex-wrap" style={{ gap: '0.45rem' }}>
+            {[
+              { type: 'chat' as const, label: '💬 Mensaje YT' },
+              { type: 'subscriber' as const, label: '🔔 Nuevo Suscriptor YT' },
+              { type: 'member' as const, label: '⭐ Nuevo Miembro YT' },
+              { type: 'milestone' as const, label: '🏅 Miembro 6 Meses' },
+              { type: 'gift' as const, label: '🎁 5 Membresías Regalo' },
+              { type: 'superchat' as const, label: '💸 Super Chat 20€' },
+            ].map((sim) => (
+              <button
+                key={sim.type}
+                type="button"
+                onClick={async () => {
+                  try {
+                    await simulateYouTubeEvent({ type: sim.type, amount: 20, currency: 'EUR', months: 6, count: 5 });
+                    setYtFeedback({ type: 'ok', text: `Evento simulado enviado a los overlays: ${sim.label}` });
+                  } catch (err) {
+                    setYtFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al simular evento' });
+                  }
+                }}
+                className="sf-btn sf-btn-ghost"
+                style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem' }}
+              >
+                {sim.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* ── Always on top ── */}
       {window.streamforger && (

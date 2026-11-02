@@ -332,3 +332,27 @@ export const StreamAvatarConfigSchema = z.object({
   chromaKeyColor: z.string().default('#00ff00'),
   transparentBg: z.boolean().default(true),
 });
+
+
+// ── YouTube Integration ──
+
+export const YouTubeCredentialsSaveSchema = z.object({
+  clientId: z.string().trim().optional(),
+  clientSecret: z.string().trim().optional(),
+  apiKey: z.string().trim().optional(),
+});
+
+export const YouTubeQuickConnectSchema = z.object({
+  channelHandleOrId: z.string().trim().min(1).max(120),
+  apiKey: z.string().trim().optional(),
+});
+
+export const YouTubeSimulateEventSchema = z.object({
+  channel: z.string().min(1),
+  type: z.enum(['chat', 'subscriber', 'member', 'milestone', 'gift', 'superchat']),
+  user: z.string().min(1).max(80).default('CyberViewerYT'),
+  message: z.string().max(300).optional(),
+  amount: z.number().min(1).max(5000).optional(),
+  currency: z.string().max(10).default('EUR'),
+  months: z.number().int().min(1).max(120).optional(),
+});

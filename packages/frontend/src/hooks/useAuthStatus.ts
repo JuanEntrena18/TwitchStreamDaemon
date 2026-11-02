@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from '../i18n/context';
 import { useSocketEvent } from './useSocket';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
+import { apiGet, apiPost, apiPut, BACKEND_URL } from '../utils/api';
 
 export interface AuthUser {
   id: string;
@@ -11,9 +10,24 @@ export interface AuthUser {
   profileImageUrl?: string;
 }
 
+export interface YouTubeCredentialsStatus {
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  hasApiKey: boolean;
+  clientIdPreview?: string;
+  apiKeyPreview?: string;
+  redirectUri: string;
+}
+
 export interface AuthStatus {
   authenticated: boolean;
+  twitchAuthenticated?: boolean;
+  youtubeAuthenticated?: boolean;
+  youtubeAuthMode?: 'oauth' | 'apikey' | null;
   user: AuthUser | null;
+  twitchUser?: AuthUser | null;
+  youtubeUser?: AuthUser | null;
+  youtubeCredentials?: YouTubeCredentialsStatus;
 }
 
 export interface DeviceCodeState {
@@ -27,7 +41,15 @@ export interface DeviceCodeState {
 
 export function useAuthStatus() {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<AuthStatus>({ authenticated: false, user: null });
+  const [status, setStatus] = useState<AuthStatus>({
+    authenticated: false,
+    twitchAuthenticated: false,
+    youtubeAuthenticated: false,
+    youtubeAuthMode: null,
+    user: null,
+    twitchUser: null,
+    youtubeUser: null,
+  });
   const [loading, setLoading] = useState(true);
   const [deviceState, setDeviceState] = useState<DeviceCodeState>({ status: 'idle' });
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -38,7 +60,7 @@ export function useAuthStatus() {
       if (res.ok) {
         const data: AuthStatus = await res.json();
         setStatus(data);
-        if (data.authenticated) {
+        if (data.twitchAuthenticated) {
           setDeviceState({ status: 'idle' });
         }
       }
@@ -60,7 +82,12 @@ export function useAuthStatus() {
 
   useEffect(() => {
     const handleExpired = () => {
-      setStatus({ authenticated: false, user: null });
+      setStatus((prev) => ({
+        ...prev,
+        authenticated: Boolean(prev.youtubeAuthenticated),
+        twitchAuthenticated: false,
+        twitchUser: null,
+      }));
       setDeviceState({ status: 'idle' });
     };
     window.addEventListener('auth:expired', handleExpired);
@@ -89,7 +116,7 @@ export function useAuthStatus() {
     } catch {
       setDeviceState({ status: 'idle', error: t('auth.errorNetwork') });
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (deviceState.status !== 'polling' || !deviceState.deviceCode) return;
@@ -132,7 +159,7 @@ export function useAuthStatus() {
       cancelled = true;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [deviceState.status, deviceState.deviceCode, deviceState.interval, refresh]);
+  }, [deviceState.status, deviceState.deviceCode, deviceState.interval, refresh, t]);
 
   const cancelDeviceLogin = useCallback(() => {
     setDeviceState({ status: 'idle' });
@@ -146,8 +173,83 @@ export function useAuthStatus() {
     try {
       await fetch(`${BACKEND_URL}/auth/logout`, { method: 'POST' });
     } catch { /* ignore */ }
-    setStatus({ authenticated: false, user: null });
+    await refresh();
+  }, [refresh]);
+
+  // ── YouTube Actions ──
+
+  const saveYouTubeCredentials = useCallback(async (creds: { clientId?: string; clientSecret?: string; apiKey?: string }) => {
+    const res = await apiPut('/youtube/credentials', creds);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Error al guardar credenciales de YouTube');
+    await refresh();
+    return data;
+  }, [refresh]);
+
+  const quickConnectYouTube = useCallback(async (channelHandleOrId: string, apiKey?: string) => {
+    const res = await apiPost('/auth/youtube/quick-connect', { channelHandleOrId, apiKey });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Error al conectar canal de YouTube');
+    await refresh();
+    return data;
+  }, [refresh]);
+
+  const startYouTubeOAuth = useCallback(async (creds?: { clientId?: string; clientSecret?: string }) => {
+    if (creds && (creds.clientId || creds.clientSecret)) {
+      await saveYouTubeCredentials(creds);
+    }
+    const res = await apiPost('/auth/youtube/start', {});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.authUrl) {
+      throw new Error(data.error || 'Falta configurar Google Client ID y Client Secret');
+    }
+    window.open(data.authUrl, '_blank', 'noopener,noreferrer');
+    return data;
+  }, [saveYouTubeCredentials]);
+
+  const logoutYouTube = useCallback(async () => {
+    try {
+      await apiPost('/auth/youtube/logout', {});
+    } catch { /* ignore */ }
+    await refresh();
+  }, [refresh]);
+
+  const simulateYouTubeEvent = useCallback(async (payload: {
+    type: 'chat' | 'subscriber' | 'member' | 'milestone' | 'gift' | 'superchat';
+    user?: string;
+    message?: string;
+    amount?: number;
+    currency?: string;
+    months?: number;
+    count?: number;
+  }) => {
+    const res = await apiPost('/youtube/simulate-event', payload);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Error al simular evento');
+    return data;
   }, []);
 
-  return { ...status, loading, login, logout, deviceState, cancelDeviceLogin, refresh };
+  const fetchYouTubeStatus = useCallback(async () => {
+    const res = await apiGet('/youtube/status');
+    if (!res.ok) return null;
+    return res.json();
+  }, []);
+
+  return {
+    ...status,
+    twitchAuthenticated: Boolean(status.twitchAuthenticated ?? (status.authenticated && status.twitchUser)),
+    youtubeAuthenticated: Boolean(status.youtubeAuthenticated),
+    loading,
+    login,
+    logout,
+    deviceState,
+    cancelDeviceLogin,
+    refresh,
+    saveYouTubeCredentials,
+    quickConnectYouTube,
+    startYouTubeOAuth,
+    logoutYouTube,
+    simulateYouTubeEvent,
+    fetchYouTubeStatus,
+  };
 }

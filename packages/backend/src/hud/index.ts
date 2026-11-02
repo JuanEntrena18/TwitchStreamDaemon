@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { ApiClient } from '@twurple/api';
-import { authProvider } from '../auth/index.js';
+import { authProvider, currentUser } from '../auth/index.js';
+import { currentYouTubeUser, fetchYouTubeHud } from '../youtube/index.js';
 import { getIO } from '../socket/index.js';
 import type { HudData } from '@streamdaemon/shared';
 import { recordSnapshot } from '../kpi/index.js';
@@ -9,11 +10,15 @@ import { logger } from '../logger.js';
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
 async function fetchHud(channelName: string): Promise<HudData | null> {
+  const ytHud = currentYouTubeUser ? await fetchYouTubeHud().catch(() => null) : null;
+
   try {
-    if (!authProvider) return null;
+    if (!authProvider || !currentUser) {
+      return ytHud;
+    }
     const api = new ApiClient({ authProvider });
     const user = await api.users.getUserByName(channelName);
-    if (!user) return null;
+    if (!user) return ytHud;
 
     const stream = await api.streams.getStreamByUserId(user.id);
 
@@ -41,7 +46,7 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
       logger.warn({ channel: channelName, err: e }, '[HUD] Subs fetch failed');
     }
 
-    return {
+    const twitchHud: HudData = {
       viewers: stream?.viewers ?? 0,
       followers: totalFollowers,
       subscribers: totalSubs,
@@ -55,9 +60,33 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
       lastFollower,
       lastSubscriber,
     };
+
+    if (!ytHud) return twitchHud;
+
+    return {
+      viewers: twitchHud.viewers + ytHud.viewers,
+      followers: twitchHud.followers + ytHud.followers,
+      subscribers: twitchHud.subscribers + ytHud.subscribers,
+      uptimeSeconds: Math.max(twitchHud.uptimeSeconds, ytHud.uptimeSeconds),
+      streamTitle: twitchHud.isLive ? twitchHud.streamTitle : (ytHud.isLive ? ytHud.streamTitle : twitchHud.streamTitle),
+      gameName: twitchHud.gameName || ytHud.gameName,
+      startedAt: twitchHud.startedAt ?? ytHud.startedAt,
+      isLive: twitchHud.isLive || ytHud.isLive,
+      lastFollower: twitchHud.lastFollower ?? ytHud.lastFollower,
+      lastSubscriber: twitchHud.lastSubscriber ?? ytHud.lastSubscriber,
+      platformBreakdown: {
+        twitch: {
+          viewers: twitchHud.viewers,
+          followers: twitchHud.followers,
+          subscribers: twitchHud.subscribers,
+          isLive: twitchHud.isLive,
+        },
+        youtube: ytHud.platformBreakdown?.youtube,
+      },
+    };
   } catch (e) {
     logger.warn({ channel: channelName, err: e }, '[HUD] fetchHud failed');
-    return null;
+    return ytHud;
   }
 }
 

@@ -37,6 +37,7 @@ import { setupAds } from './ads/index.js';
 import { setupObs } from './obs/index.js';
 import { setupLayouts } from './layouts/index.js';
 import { setupVibeDaemon } from './vibe-daemon/index.js';
+import { setupYouTube } from './youtube/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,9 +63,9 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('Content-Security-Policy',
       "default-src 'self'; " +
-      "connect-src 'self' https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv ws://localhost:3000 ws://127.0.0.1:3000; " +
-      "frame-src 'self' https://player.twitch.tv; " +
-      "img-src 'self' https://static-cdn.jtvnw.net https://howlongtobeat.com data: blob:; " +
+      "connect-src 'self' https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv https://www.googleapis.com https://oauth2.googleapis.com ws://localhost:3000 ws://127.0.0.1:3000; " +
+      "frame-src 'self' https://player.twitch.tv https://www.youtube.com; " +
+      "img-src 'self' https://static-cdn.jtvnw.net https://howlongtobeat.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data: blob:; " +
       "media-src 'self' blob:; " +
       "script-src 'self' 'unsafe-inline' blob:; " +
       "worker-src 'self' blob:; " +
@@ -108,6 +109,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
   });
 
   await setupAuth(app);
+  await setupYouTube(app);
   setupSocketIO(app);
   setupGiveaways(app);
   setEnterGiveaway(enterGiveaway);

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { encryptToken, decryptToken, decryptTokenLegacy } from './token-crypto.js';
 import { logger } from '../logger.js';
+import { currentYouTubeUser, youtubeAuthMode, getYouTubeCredentialsInfo } from '../youtube/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -195,7 +196,9 @@ export async function setupAuth(app: FastifyInstance) {
     if (currentUser) {
       logger.info({ user: currentUser.displayName }, 'Logging out user');
       currentUser = null;
-      await prisma.user.deleteMany({});
+      await prisma.user.deleteMany({
+        where: { NOT: { twitchId: { startsWith: 'yt:' } } },
+      });
     }
     reply.send({ success: true });
   });
@@ -221,9 +224,17 @@ export async function setupAuth(app: FastifyInstance) {
         if (token?.scope) tokenScopes = Array.isArray(token.scope) ? token.scope : (token.scope as string).split(' ');
       }
     } catch {}
+    const twitchAuthenticated = authProvider !== null && currentUser !== null;
+    const youtubeAuthenticated = currentYouTubeUser !== null;
     return {
-      authenticated: authProvider !== null && currentUser !== null,
-      user: currentUser,
+      authenticated: twitchAuthenticated || youtubeAuthenticated,
+      twitchAuthenticated,
+      youtubeAuthenticated,
+      youtubeAuthMode,
+      user: currentUser ?? currentYouTubeUser,
+      twitchUser: currentUser,
+      youtubeUser: currentYouTubeUser,
+      youtubeCredentials: getYouTubeCredentialsInfo(),
       scopes: tokenScopes,
       requiredScopes: SCOPES,
     };
@@ -287,7 +298,10 @@ async function finishAuth(
 
 async function restoreSession() {
   try {
-    const user = await prisma.user.findFirst({ orderBy: { updatedAt: 'desc' } });
+    const user = await prisma.user.findFirst({
+      where: { NOT: { twitchId: { startsWith: 'yt:' } } },
+      orderBy: { updatedAt: 'desc' },
+    });
     if (!user) return;
 
     let accessToken = user.accessToken;

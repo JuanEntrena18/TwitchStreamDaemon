@@ -267,3 +267,197 @@
   color: var(--sf-text-3);
   cursor: not-allowed;
 }
+
+
+.connectedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.disconnectMiniBtn {
+  background: transparent;
+  border: 1px solid var(--sf-border);
+  color: var(--sf-text-3);
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.disconnectMiniBtn:hover {
+  border-color: var(--sf-danger);
+  color: var(--sf-danger);
+}
+
+.ytNewBadge {
+  margin-left: 0.5rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255, 0, 51, 0.14);
+  border: 1px solid rgba(255, 0, 51, 0.35);
+  color: #ff4d6d;
+  padding: 0.1rem 0.5rem;
+  border-radius: 99px;
+}
+
+.ytAvatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff0033, #cc0000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ytModePill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.08rem 0.45rem;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sf-text-2);
+}
+
+.ytTabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.65rem 0;
+  background: var(--sf-bg-2, rgba(0, 0, 0, 0.25));
+  padding: 0.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--sf-border);
+}
+
+.ytTabBtn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--sf-text-3);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ytTabBtnActive {
+  background: rgba(255, 0, 51, 0.16);
+  color: #ff4d6d;
+  border: 1px solid rgba(255, 0, 51, 0.35);
+}
+
+.ytForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+}
+
+.ytField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ytFieldLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--sf-text-2);
+}
+
+.savedKeyHint {
+  font-size: 0.68rem;
+  color: var(--sf-success);
+  font-weight: 600;
+}
+
+.youtubeBtn {
+  background: linear-gradient(135deg, #ff0033 0%, #c9002b 100%);
+  color: #fff;
+  font-size: 0.78rem;
+  padding: 0.5rem 1rem;
+  gap: 0.4rem;
+  box-shadow: 0 2px 12px rgba(255, 0, 51, 0.32);
+}
+
+.helpToggleBtn {
+  background: transparent;
+  border: 1px solid var(--sf-border);
+  color: var(--sf-text-2);
+  font-size: 0.74rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.helpToggleBtn:hover {
+  border-color: var(--sf-text-3);
+  color: var(--sf-text);
+}
+
+.redirectUriBox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.redirectUriLabel {
+  color: var(--sf-text-3);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.redirectUriCode {
+  color: var(--sf-primary-light);
+  font-family: monospace;
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.copyUriBtn {
+  background: var(--sf-surface-hover);
+  border: 1px solid var(--sf-border);
+  color: var(--sf-text-2);
+  border-radius: 5px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ytHelpBox {
+  margin-top: 0.65rem;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 0, 51, 0.06);
+  border: 1px solid rgba(255, 0, 51, 0.22);
+  border-radius: 8px;
+  font-size: 0.74rem;
+  color: var(--sf-text-2);
+  line-height: 1.55;
+}
+
+.ytHelpBox ol {
+  margin: 0.4rem 0 0;
+  padding-left: 1.15rem;
+}

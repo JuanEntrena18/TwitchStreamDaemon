@@ -5,7 +5,7 @@ export interface TwitchUser {
   avatarUrl: string | null;
 }
 
-export interface ChatMessage {
+export interface ChatMessage { platform?: StreamPlatform; superChat?: { formattedAmount: string; tierColor: string };
   id: string;
   user: {
     id: string;
@@ -128,7 +128,7 @@ export interface ChannelRedemptionEvent {
   timestamp: number;
 }
 
-export interface ChannelCheerEvent {
+export interface ChannelCheerEvent { platform?: StreamPlatform; formattedAmount?: string; tierColor?: string;
   userDisplayName: string;
   userName: string;
   bits: number;
@@ -136,7 +136,7 @@ export interface ChannelCheerEvent {
   timestamp: number;
 }
 
-export interface HudData {
+export interface HudData { platform?: StreamPlatform | 'multi'; platformBreakdown?: { twitch?: { viewers: number; followers: number; subscribers: number; isLive: boolean }; youtube?: { viewers: number; subscribers: number; members: number; isLive: boolean } };
   viewers: number;
   followers: number;
   subscribers: number;
@@ -616,3 +616,28 @@ export interface VibeCvCaptureDebug {
   captureSize: { width: number; height: number } | null;
 }
 
+
+
+// ── Multi-Platform & YouTube Integration ──
+
+export type StreamPlatform = 'twitch' | 'youtube';
+
+export interface PlatformUser {
+  platform: StreamPlatform;
+  id: string;
+  login: string;
+  displayName: string;
+  avatarUrl: string | null;
+  profileImageUrl?: string;
+  channelId?: string;
+  liveBroadcastId?: string | null;
+  liveChatId?: string | null;
+}
+
+export interface YouTubeCredentialsInfo {
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  hasApiKey: boolean;
+  clientIdPreview: string;
+  redirectUri: string;
+}

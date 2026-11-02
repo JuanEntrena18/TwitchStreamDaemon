@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from '../i18n/context';
 import { useAuthStatus } from '../hooks/useAuthStatus';
 import { Logo } from './Logo';
@@ -19,16 +20,83 @@ export function markSetupComplete() {
 
 export function SetupWizard({ onComplete }: Props) {
   const { t } = useTranslation();
-  const { authenticated, user, loading: authLoading, login, deviceState, cancelDeviceLogin } = useAuthStatus();
+  const {
+    authenticated,
+    twitchAuthenticated,
+    youtubeAuthenticated,
+    youtubeAuthMode,
+    twitchUser,
+    youtubeUser,
+    youtubeCredentials,
+    loading: authLoading,
+    login,
+    logout,
+    deviceState,
+    cancelDeviceLogin,
+    quickConnectYouTube,
+    startYouTubeOAuth,
+    logoutYouTube,
+  } = useAuthStatus();
+
+  const [ytMode, setYtMode] = useState<'apikey' | 'oauth'>('apikey');
+  const [ytChannelInput, setYtChannelInput] = useState('');
+  const [ytApiKey, setYtApiKey] = useState('');
+  const [ytClientId, setYtClientId] = useState('');
+  const [ytClientSecret, setYtClientSecret] = useState('');
+  const [ytBusy, setYtBusy] = useState(false);
+  const [ytError, setYtError] = useState('');
+  const [showYtHelp, setShowYtHelp] = useState(false);
+  const [copiedUri, setCopiedUri] = useState(false);
 
   const handleFinish = () => {
     markSetupComplete();
     onComplete();
   };
 
+  const handleQuickConnectYt = async () => {
+    if (!ytChannelInput.trim()) {
+      setYtError('Introduce el @handle o ID de tu canal de YouTube (ej. @Rubius o UC...)');
+      return;
+    }
+    setYtBusy(true);
+    setYtError('');
+    try {
+      await quickConnectYouTube(ytChannelInput.trim(), ytApiKey.trim() || undefined);
+      setYtChannelInput('');
+      setYtApiKey('');
+    } catch (err) {
+      setYtError(err instanceof Error ? err.message : 'Error al conectar YouTube');
+    } finally {
+      setYtBusy(false);
+    }
+  };
+
+  const handleOAuthConnectYt = async () => {
+    setYtBusy(true);
+    setYtError('');
+    try {
+      await startYouTubeOAuth({
+        clientId: ytClientId.trim() || undefined,
+        clientSecret: ytClientSecret.trim() || undefined,
+      });
+    } catch (err) {
+      setYtError(err instanceof Error ? err.message : 'Error al iniciar OAuth de YouTube');
+    } finally {
+      setYtBusy(false);
+    }
+  };
+
+  const redirectUri = youtubeCredentials?.redirectUri || 'http://localhost:3000/auth/youtube/callback';
+
+  const copyRedirectUri = () => {
+    navigator.clipboard.writeText(redirectUri).catch(() => {});
+    setCopiedUri(true);
+    setTimeout(() => setCopiedUri(false), 2000);
+  };
+
   const steps = [
-    { key: 'twitch', label: t('setup.twitch'), done: authenticated },
-    { key: 'youtube', label: t('setup.youtube'), done: false, comingSoon: true },
+    { key: 'twitch', label: t('setup.twitch'), done: twitchAuthenticated, comingSoon: false },
+    { key: 'youtube', label: t('setup.youtube'), done: youtubeAuthenticated, comingSoon: false },
     { key: 'tiktok', label: t('setup.tiktok'), done: false, comingSoon: true },
   ];
 
@@ -37,7 +105,7 @@ export function SetupWizard({ onComplete }: Props) {
       <div className={styles.bgGlow} style={{
         background: `
           radial-gradient(ellipse 60% 50% at 50% 30%, rgba(124,58,237,0.15) 0%, transparent 70%),
-          radial-gradient(ellipse 40% 30% at 50% 80%, rgba(99,102,241,0.1) 0%, transparent 70%)
+          radial-gradient(ellipse 40% 30% at 50% 80%, rgba(255,0,51,0.08) 0%, transparent 70%)
         `,
       }} />
 
@@ -78,6 +146,9 @@ export function SetupWizard({ onComplete }: Props) {
                   <div className={styles.stepContent}>
                     <div className={styles.stepLabel}>
                       {step.label}
+                      {step.key === 'youtube' && (
+                        <span className={styles.ytNewBadge}>NUEVO · MULTISTREAM</span>
+                      )}
                       {step.comingSoon && (
                         <span className={styles.comingSoonBadge}>
                           {t('setup.comingSoon')}
@@ -85,16 +156,26 @@ export function SetupWizard({ onComplete }: Props) {
                       )}
                     </div>
 
+                    {/* ── TWITCH STEP ── */}
                     {step.key === 'twitch' && (
                       <div>
-                        {!authLoading && authenticated && user ? (
-                          <div className={styles.authBadge}>
-                            <div className={styles.authAvatar}>
-                              {user.displayName.charAt(0).toUpperCase()}
+                        {!authLoading && twitchAuthenticated && twitchUser ? (
+                          <div className={styles.connectedRow}>
+                            <div className={styles.authBadge}>
+                              <div className={styles.authAvatar}>
+                                {twitchUser.displayName.charAt(0).toUpperCase()}
+                              </div>
+                              <span className={styles.authName}>
+                                {twitchUser.displayName}
+                              </span>
                             </div>
-                            <span className={styles.authName}>
-                              {user.displayName}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={logout}
+                              className={styles.disconnectMiniBtn}
+                            >
+                              {t('config.desconectar')}
+                            </button>
                           </div>
                         ) : (
                           <div className={styles.connectDesc}>
@@ -129,7 +210,8 @@ export function SetupWizard({ onComplete }: Props) {
                                 {t('config.authCodigo')}{' '}
                                 <strong className={styles.codeValue}>
                                   {deviceState.userCode}
-                              </strong></li>
+                                </strong>
+                              </li>
                               <li>{t('config.authInstrucciones')}</li>
                             </ol>
                             <div className={styles.deviceActions}>
@@ -165,9 +247,217 @@ export function SetupWizard({ onComplete }: Props) {
                       </div>
                     )}
 
+                    {/* ── YOUTUBE LIVE STEP ── */}
+                    {step.key === 'youtube' && (
+                      <div>
+                        {!authLoading && youtubeAuthenticated && youtubeUser ? (
+                          <div className={styles.connectedRow}>
+                            <div className={styles.authBadge}>
+                              <div className={styles.ytAvatar}>
+                                ▶
+                              </div>
+                              <span className={styles.authName}>
+                                {youtubeUser.displayName}
+                              </span>
+                              <span className={styles.ytModePill}>
+                                {youtubeAuthMode === 'oauth' ? 'OAuth 2.0' : 'API Key'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={logoutYouTube}
+                              className={styles.disconnectMiniBtn}
+                            >
+                              {t('config.desconectar')}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className={styles.connectDesc}>
+                            <p className="mb-2">
+                              Conecta tu canal de YouTube para recibir chat en vivo, Super Chats, miembros, suscriptores y alertas en los +57 overlays (solo YouTube o Multistream con Twitch).
+                            </p>
+
+                            {/* Mode selector tabs */}
+                            <div className={styles.ytTabs}>
+                              <button
+                                type="button"
+                                onClick={() => { setYtMode('apikey'); setYtError(''); }}
+                                className={`${styles.ytTabBtn} ${ytMode === 'apikey' ? styles.ytTabBtnActive : ''}`}
+                              >
+                                ⚡ Conexión Rápida (API Key)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setYtMode('oauth'); setYtError(''); }}
+                                className={`${styles.ytTabBtn} ${ytMode === 'oauth' ? styles.ytTabBtnActive : ''}`}
+                              >
+                                🔐 OAuth 2.0 Completo
+                              </button>
+                            </div>
+
+                            {ytMode === 'apikey' ? (
+                              <div className={styles.ytForm}>
+                                <div className={styles.ytField}>
+                                  <label className={styles.ytFieldLabel}>
+                                    YouTube Data API v3 Key
+                                    {youtubeCredentials?.hasApiKey && (
+                                      <span className={styles.savedKeyHint}>
+                                        ✓ Guardada ({youtubeCredentials.apiKeyPreview})
+                                      </span>
+                                    )}
+                                  </label>
+                                  <input
+                                    type="password"
+                                    value={ytApiKey}
+                                    onChange={(e) => setYtApiKey(e.target.value)}
+                                    placeholder={
+                                      youtubeCredentials?.hasApiKey
+                                        ? 'Dejar vacío para usar la API Key guardada o pega una nueva...'
+                                        : 'AIzaSy...'
+                                    }
+                                    className="sf-input"
+                                    style={{ fontSize: '0.78rem' }}
+                                  />
+                                </div>
+
+                                <div className={styles.ytField}>
+                                  <label className={styles.ytFieldLabel}>
+                                    Canal de YouTube (@handle o ID de canal)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={ytChannelInput}
+                                    onChange={(e) => setYtChannelInput(e.target.value)}
+                                    placeholder="@TuCanal o UCxxxxxxxxxxxx"
+                                    className="sf-input"
+                                    style={{ fontSize: '0.78rem' }}
+                                  />
+                                </div>
+
+                                <div className={styles.connectBtnWrap}>
+                                  <button
+                                    type="button"
+                                    disabled={ytBusy}
+                                    onClick={handleQuickConnectYt}
+                                    className={`sf-btn ${styles.youtubeBtn}`}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                                    </svg>
+                                    {ytBusy ? 'Conectando...' : 'Conectar Canal de YouTube'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowYtHelp((v) => !v)}
+                                    className={styles.helpToggleBtn}
+                                  >
+                                    {showYtHelp ? 'Ocultar guía' : '¿Cómo obtener API Key?'}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className={styles.ytForm}>
+                                <div className={styles.ytField}>
+                                  <label className={styles.ytFieldLabel}>
+                                    Google OAuth Client ID
+                                    {youtubeCredentials?.hasClientId && (
+                                      <span className={styles.savedKeyHint}>
+                                        ✓ Guardado ({youtubeCredentials.clientIdPreview})
+                                      </span>
+                                    )}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={ytClientId}
+                                    onChange={(e) => setYtClientId(e.target.value)}
+                                    placeholder={
+                                      youtubeCredentials?.hasClientId
+                                        ? 'Dejar vacío para usar el Client ID guardado...'
+                                        : '123456789-xxxx.apps.googleusercontent.com'
+                                    }
+                                    className="sf-input"
+                                    style={{ fontSize: '0.78rem' }}
+                                  />
+                                </div>
+
+                                <div className={styles.ytField}>
+                                  <label className={styles.ytFieldLabel}>
+                                    Google OAuth Client Secret
+                                    {youtubeCredentials?.hasClientSecret && (
+                                      <span className={styles.savedKeyHint}>✓ Guardado</span>
+                                    )}
+                                  </label>
+                                  <input
+                                    type="password"
+                                    value={ytClientSecret}
+                                    onChange={(e) => setYtClientSecret(e.target.value)}
+                                    placeholder={
+                                      youtubeCredentials?.hasClientSecret
+                                        ? 'Dejar vacío para usar el Secret guardado...'
+                                        : 'GOCSPX-...'
+                                    }
+                                    className="sf-input"
+                                    style={{ fontSize: '0.78rem' }}
+                                  />
+                                </div>
+
+                                <div className={styles.redirectUriBox}>
+                                  <span className={styles.redirectUriLabel}>Redirect URI:</span>
+                                  <code className={styles.redirectUriCode}>{redirectUri}</code>
+                                  <button
+                                    type="button"
+                                    onClick={copyRedirectUri}
+                                    className={styles.copyUriBtn}
+                                  >
+                                    {copiedUri ? '✓ Copiado' : 'Copiar'}
+                                  </button>
+                                </div>
+
+                                <div className={styles.connectBtnWrap}>
+                                  <button
+                                    type="button"
+                                    disabled={ytBusy}
+                                    onClick={handleOAuthConnectYt}
+                                    className={`sf-btn ${styles.youtubeBtn}`}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                                    </svg>
+                                    {ytBusy ? 'Abriendo Google...' : 'Autorizar con Google / YouTube'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowYtHelp((v) => !v)}
+                                    className={styles.helpToggleBtn}
+                                  >
+                                    {showYtHelp ? 'Ocultar guía' : '¿Cómo configurar OAuth?'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {showYtHelp && (
+                              <div className={styles.ytHelpBox}>
+                                <strong>Guía rápida en Google Cloud Console:</strong>
+                                <ol>
+                                  <li>Abre <strong>console.cloud.google.com</strong>, crea un proyecto y habilita <strong>YouTube Data API v3</strong>.</li>
+                                  <li>Para <strong>Conexión Rápida</strong>: ve a <em>Credenciales → Crear credenciales → Clave de API</em> y pégala arriba junto con tu <code>@handle</code>.</li>
+                                  <li>Para <strong>OAuth 2.0 Completo</strong> (enviar mensajes desde el Dashboard y moderar): crea un <em>ID de cliente OAuth (Aplicación web)</em>, añade <code>{redirectUri}</code> en URI de redirección autorizados y pega el Client ID y Secret.</li>
+                                </ol>
+                              </div>
+                            )}
+
+                            {ytError && (
+                              <p className={styles.errorText}>{ytError}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {step.comingSoon && (
                       <p className={styles.comingSoonDesc}>
-                        {step.key === 'youtube' ? t('setup.youtubeDesc') : t('setup.tiktokDesc')}
+                        {t('setup.tiktokDesc')}
                       </p>
                     )}
                   </div>

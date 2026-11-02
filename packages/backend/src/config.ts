@@ -18,6 +18,9 @@ export const config = {
   DATABASE_URL: process.env.DATABASE_URL ?? 'file:./data/streamforger.db?journal_mode=WAL',
   TWITCH_CLIENT_ID: process.env.TWITCH_CLIENT_ID ?? '',
   TWITCH_CLIENT_SECRET: process.env.TWITCH_CLIENT_SECRET ?? '',
+  YOUTUBE_CLIENT_ID: process.env.YOUTUBE_CLIENT_ID ?? '',
+  YOUTUBE_CLIENT_SECRET: process.env.YOUTUBE_CLIENT_SECRET ?? '',
+  YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? '',
   FORTNITE_API_KEY: process.env.FORTNITE_API_KEY ?? '',
   LOCAL_API_TOKEN: process.env.LOCAL_API_TOKEN,
 };
