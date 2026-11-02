@@ -397,12 +397,17 @@ async function discoverActiveBroadcast(): Promise<{ broadcastId: string | null; 
 ────────────────────────────────────────────────────────── */
 function emitToActiveRooms(event: string, payload: unknown) {
   const io = getIO();
-  const rooms = new Set<string>();
+  const rooms = new Set<string>(['global']);
   if (twitchUser?.login) rooms.add(twitchUser.login.toLowerCase());
-  if (currentYouTubeUser?.login) rooms.add(currentYouTubeUser.login.toLowerCase());
-  for (const r of rooms) {
-    io.to(`channel:${r}`).emit(event, payload);
+  if (currentYouTubeUser?.login) {
+    rooms.add(currentYouTubeUser.login.toLowerCase());
+    rooms.add(currentYouTubeUser.login.replace(/^@/, '').toLowerCase());
   }
+  let broadcast = io.to('channel:global');
+  for (const r of rooms) {
+    broadcast = broadcast.to(`channel:${r}`);
+  }
+  broadcast.emit(event, payload);
 }
 
 function handleYouTubeChatCommand(channelSlug: string, authorName: string, text: string, isSponsor: boolean) {

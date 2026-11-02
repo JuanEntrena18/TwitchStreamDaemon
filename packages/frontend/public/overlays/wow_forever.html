@@ -754,13 +754,15 @@
 
   <div id="wow-chronicles" class="wow-frame">
     <div class="chronicle-header">
-      <span class="chronicle-title">📜 Crónicas de Azeroth</span>
-      <span class="chronicle-realm-pill">FOREVER</span>
+      <span class="chronicle-title" id="wow-panel-title">📜 Crónicas de Azeroth</span>
+      <span class="chronicle-realm-pill" id="wow-panel-badge">FOREVER</span>
     </div>
-    <div class="chronicle-row"><span class="chronicle-label">Nivel de Objeto (iLvl)</span><span class="chronicle-val gold">639 Mythic</span></div>
-    <div class="chronicle-row"><span class="chronicle-label">Piedra Angular M+</span><span class="chronicle-val arcane">+16 En Tiempo</span></div>
-    <div class="chronicle-row"><span class="chronicle-label">Índice Mítico (RIO)</span><span class="chronicle-val gold">3,480</span></div>
-    <div class="chronicle-row"><span class="chronicle-label">Progreso de Banda</span><span class="chronicle-val emerald">8/8 Mítico</span></div>
+    <div id="wow-chronicle-rows">
+      <div class="chronicle-row"><span class="chronicle-label">Nivel de Objeto (iLvl)</span><span class="chronicle-val gold">639 Mythic</span></div>
+      <div class="chronicle-row"><span class="chronicle-label">Piedra Angular M+</span><span class="chronicle-val arcane">+16 En Tiempo</span></div>
+      <div class="chronicle-row"><span class="chronicle-label">Índice Mítico (RIO)</span><span class="chronicle-val gold">3,480</span></div>
+      <div class="chronicle-row"><span class="chronicle-label">Progreso de Banda</span><span class="chronicle-val emerald">8/8 Mítico</span></div>
+    </div>
   </div>
 </div>
 
@@ -973,6 +975,48 @@ function showNextAlert() {
   }, 5100);
 }
 
+function applyWowStats(data) {
+  if (!data) return;
+  const titleEl = document.getElementById('wow-panel-title');
+  const badgeEl = document.getElementById('wow-panel-badge');
+  const rowsEl = document.getElementById('wow-chronicle-rows');
+  if (titleEl && data.panelTitle) titleEl.textContent = '📜 ' + data.panelTitle;
+  if (badgeEl && data.panelBadge) badgeEl.textContent = data.panelBadge;
+  if (rowsEl && Array.isArray(data.rows) && data.rows.length > 0) {
+    rowsEl.innerHTML = '';
+    const tones = ['gold', 'arcane', 'gold', 'emerald'];
+    data.rows.forEach((r, idx) => {
+      const row = document.createElement('div');
+      row.className = 'chronicle-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'chronicle-label';
+      lbl.textContent = r.label || '';
+      const val = document.createElement('span');
+      val.className = 'chronicle-val ' + (r.tone || tones[idx % tones.length]);
+      val.textContent = r.value || '';
+      row.appendChild(lbl);
+      row.appendChild(val);
+      rowsEl.appendChild(row);
+    });
+  }
+}
+
+function fetchWowStats() {
+  const qs = new URLSearchParams();
+  if (params.get('region')) qs.set('region', params.get('region'));
+  if (params.get('realm')) qs.set('realm', params.get('realm'));
+  if (params.get('character')) qs.set('character', params.get('character'));
+  if (params.get('wowMode')) qs.set('mode', params.get('wowMode'));
+  const queryStr = qs.toString() ? '?' + qs.toString() : '';
+  fetch(`${BACKEND_URL}/wow/stats${queryStr}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d) applyWowStats(d); })
+    .catch(() => {});
+}
+
+fetchWowStats();
+setInterval(fetchWowStats, 180000);
+
 function updateHud(data) {
   if (!data) return;
   document.getElementById('val-viewers').textContent = data.viewers ?? 0;
@@ -1018,6 +1062,7 @@ if (DEMO_MODE) {
     if (CHANNEL) socket.emit('join:channel', CHANNEL);
   });
   socket.on('hud:update', updateHud);
+  socket.on('wow:stats-updated', applyWowStats);
   socket.on('chat:message', addChatMessage);
   socket.on('channel:follow', d => {
     document.getElementById('last-follow-name').textContent = d.userDisplayName || 'Héroe';

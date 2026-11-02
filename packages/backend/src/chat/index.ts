@@ -3,7 +3,7 @@ import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getIO } from '../socket/index.js';
+import { emitToStreamRooms } from '../socket/index.js';
 import { authProvider, currentUser } from '../auth/index.js';
 import { currentYouTubeUser, sendYouTubeChatMessage } from '../youtube/index.js';
 import { checkCustomCommand } from '../commands/index.js';
@@ -134,8 +134,8 @@ export async function setupChat() {
     handleCommands(channelName, user, text, subTier);
     incrementChatCounter(channelName, user);
 
-    const io = getIO();
-    io.to(`channel:${channelName}`).emit('chat:message', {
+    // Broadcast to all active stream overlay rooms
+    emitToStreamRooms('chat:message', {
       id: msg.id,
       platform: 'twitch',
       user: {
@@ -146,7 +146,7 @@ export async function setupChat() {
       },
       text,
       timestamp: Date.now(),
-    });
+    }, channelName);
 
     checkMessage(channelName, user, text);
   });
@@ -178,6 +178,9 @@ export async function setupChat() {
     }
   });
 
+  if (currentUser?.login) {
+    joinedChannels.add(currentUser.login.toLowerCase());
+  }
   for (const ch of joinedChannels) {
     try {
       await chatClient.join(ch);
@@ -250,7 +253,9 @@ export function getAddTicketsFn() {
   return addTicketsFn;
 }
 
-export async function joinChannel(channel: string) {
+export async function joinChannel(rawChannel: string) {
+  const channel = String(rawChannel || '').trim().replace(/^[@#]/, '').toLowerCase();
+  if (!channel || !/^[a-z0-9_]{2,25}$/.test(channel)) return;
   if (joinedChannels.has(channel)) return;
   joinedChannels.add(channel);
   if (!chatClient) {
@@ -301,8 +306,7 @@ export async function sendMessage(channel: string, message: string) {
   }
 
   const activeUser = currentUser ?? currentYouTubeUser;
-  const io = getIO();
-  io.to(`channel:${channel}`).emit('chat:message', {
+  emitToStreamRooms('chat:message', {
     id: `send-${Date.now()}`,
     platform: currentUser ? 'twitch' : 'youtube',
     user: {
@@ -313,6 +317,6 @@ export async function sendMessage(channel: string, message: string) {
     },
     text: message,
     timestamp: Date.now(),
-  });
+  }, channel);
   logger.debug({ channel, sentAny, message: message.substring(0, 50) }, 'Message sent');
 }

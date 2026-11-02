@@ -54,10 +54,10 @@ export function ChatOverlay({ channel, fontFamily = "'Inter', sans-serif", fontS
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
-  // Rejoin channel on reconnect
+  // Rejoin channel on reconnect (even if channel param was omitted, join global stream room)
   useEffect(() => {
-    if (!channel || !socket) return;
-    const join = () => socket.emit('join:channel', channel);
+    if (!socket) return;
+    const join = () => socket.emit('join:channel', channel || 'global');
     join();
     socket.on('connect', join);
     return () => { socket.off('connect', join); };
@@ -261,6 +261,35 @@ export function ChatOverlay({ channel, fontFamily = "'Inter', sans-serif", fontS
                 lineHeight: 1.45,
               }}
             >
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 900,
+                  padding: '1px 4px',
+                  borderRadius: 3,
+                  letterSpacing: '0.06em',
+                  color: '#fff',
+                  background: msg.platform === 'youtube' ? '#ff0033' : '#9146ff',
+                  flexShrink: 0,
+                }}
+              >
+                {msg.platform === 'youtube' ? 'YT' : 'TW'}
+              </span>
+              {msg.superChat?.formattedAmount && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 800,
+                    padding: '1px 5px',
+                    borderRadius: 3,
+                    background: msg.superChat.tierColor || '#ffb300',
+                    color: '#000',
+                    flexShrink: 0,
+                  }}
+                >
+                  SC {msg.superChat.formattedAmount}
+                </span>
+              )}
               <span
                 style={{
                   color: msg.user.color || '#a78bfa',

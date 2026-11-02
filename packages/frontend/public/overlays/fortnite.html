@@ -1112,12 +1112,15 @@ function initChatLayout() {
   }
 }
 
-function addChatMessage(displayName, text, color) {
+function addChatMessage(displayName, text, color, platform, superChat) {
   const container = document.getElementById('fn-chat-msgs');
   if (!container) return;
   const row = document.createElement('div');
   row.className = 'fn-chat-msg';
-  row.innerHTML = `<span class="un" style="color:${escHtml(color || '#00D4FF')}">${escHtml(displayName)}:</span> <span class="txt">${escHtml(text)}</span>`;
+  const isYt = platform === 'youtube';
+  const badgeHtml = `<span style="display:inline-block;font-size:9px;font-weight:900;padding:1px 4px;border-radius:3px;margin-right:5px;background:${isYt ? '#ff0033' : '#9146ff'};color:#fff;vertical-align:middle;">${isYt ? 'YT' : 'TW'}</span>`;
+  const scHtml = superChat?.formattedAmount ? `<span style="display:inline-block;font-size:9px;font-weight:900;padding:1px 4px;border-radius:3px;margin-right:5px;background:#ffb300;color:#000;vertical-align:middle;">SC ${escHtml(superChat.formattedAmount)}</span>` : '';
+  row.innerHTML = `${badgeHtml}${scHtml}<span class="un" style="color:${escHtml(color || (isYt ? '#FF0033' : '#00D4FF'))}">${escHtml(displayName)}:</span> <span class="txt">${escHtml(text)}</span>`;
   container.appendChild(row);
   while (container.children.length > MAX_CHAT_MSGS) container.removeChild(container.firstChild);
   container.scrollTop = container.scrollHeight;
@@ -1208,8 +1211,8 @@ function initSocket() {
     enqueueAlert({ type: 'redemption', user: userDisplayName, detail: rewardTitle });
   });
 
-  socket.on('chat:message', ({ user, text }) => {
-    addChatMessage(user.displayName, text, user.color);
+  socket.on('chat:message', (d) => {
+    addChatMessage(d.user?.displayName || 'Anónimo', d.text || '', d.user?.color, d.platform, d.superChat);
   });
 }
 

@@ -27,8 +27,9 @@ export function Subnautica2ChatOverlay({ channel }: Props) {
   );
 
   useEffect(() => {
-    if (channel && connected) {
-      socket.emit('join:channel', channel);
+    if (connected) {
+      socket.emit('join:channel', channel || 'global');
+    // joined above
     }
   }, [channel, connected, socket]);
 
@@ -122,7 +123,7 @@ export function Subnautica2ChatOverlay({ channel }: Props) {
                   textShadow: `0 0 8px ${msg.user.color ?? '#00d4ff'}`,
                 }}
               >
-                ▶ {msg.user.displayName}
+                ▶ <span style={{ fontSize: '9px', fontWeight: 900, padding: '1px 4px', borderRadius: 2, marginRight: 5, background: msg.platform === 'youtube' ? '#ff0033' : '#9146ff', color: '#fff', textShadow: 'none' }}>{msg.platform === 'youtube' ? 'YT' : 'TW'}</span>{msg.superChat?.formattedAmount && <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: 2, marginRight: 5, background: '#ffb300', color: '#000', textShadow: 'none' }}>SC {msg.superChat.formattedAmount}</span>}{msg.user.displayName}
               </div>
 
               <div className={styles.msgText}>

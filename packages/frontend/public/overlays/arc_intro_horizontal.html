@@ -196,8 +196,8 @@
         }
         tick();
 
-        const BACKEND_URL = window.location.protocol + '//' + window.location.host;
-        const CHANNEL = new URLSearchParams(window.location.search).get('channel') || 'default';
+        const BACKEND_URL = (new URLSearchParams(window.location.search).get('backend') || 'http://localhost:3000').replace(/\/+$/, '');
+        const CHANNEL = new URLSearchParams(window.location.search).get('channel') || 'global';
         let socket;
 
         function initSocket() {
@@ -232,8 +232,11 @@
                     addLogMessage(`PROTOCOLO ACTIVADO: ${rewardTitle} por ${userDisplayName}`);
                 });
 
-                socket.on('chat:message', ({ username, message, color }) => {
-                    addLogMessage(`${username}: ${message}`);
+                socket.on('chat:message', (d) => {
+                    const plat = d.platform === 'youtube' ? '[YT]' : '[TW]';
+                    const name = d.user?.displayName || d.username || 'Anónimo';
+                    const text = d.text || d.message || '';
+                    addLogMessage(`${plat} ${name}: ${text}`);
                 });
             } catch(e) {
                 console.error("Socket fallback", e);

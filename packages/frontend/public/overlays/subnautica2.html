@@ -661,7 +661,7 @@ function addChat(msg) {
   el.innerHTML = `
     <div class="shimmer"></div>
     <div class="chat-user" style="color:${msg.user?.color || '#00d4ff'};text-shadow:0 0 8px ${msg.user?.color || '#00d4ff'}">
-      ▶ ${escHtml(msg.user?.displayName || 'Anónimo')}
+      ▶ <span style="display:inline-block;font-size:9px;font-weight:900;padding:1px 4px;border-radius:2px;margin-right:5px;background:${msg.platform === 'youtube' ? '#ff0033' : '#9146ff'};color:#fff;text-shadow:none;">${msg.platform === 'youtube' ? 'YT' : 'TW'}</span>${msg.superChat?.formattedAmount ? `<span style="display:inline-block;font-size:9px;font-weight:800;padding:1px 4px;border-radius:2px;margin-right:5px;background:#ffb300;color:#000;text-shadow:none;">SC ${escHtml(msg.superChat.formattedAmount)}</span>` : ''}${escHtml(msg.user?.displayName || 'Anónimo')}
     </div>
     <div class="chat-text">${escHtml(msg.text)}</div>
     <div class="chat-bar">

@@ -25,6 +25,7 @@ import { setupActivity } from './activity/index.js';
 import { setupCommands } from './commands/index.js';
 import { setupChatTimers } from './chat-timers/index.js';
 import { setupFortnite } from './fortnite/index.js';
+import { setupWow } from './wow/index.js';
 import { setupSecurity } from './security/index.js';
 import { setupAlertSounds } from './alert-sounds/index.js';
 import { setupAvatars } from './avatars/index.js';
@@ -63,7 +64,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('Content-Security-Policy',
       "default-src 'self'; " +
-      "connect-src 'self' https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv https://www.googleapis.com https://oauth2.googleapis.com ws://localhost:3000 ws://127.0.0.1:3000; " +
+      "connect-src 'self' https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv https://www.googleapis.com https://oauth2.googleapis.com https://raider.io ws://localhost:3000 ws://127.0.0.1:3000; " +
       "frame-src 'self' https://player.twitch.tv https://www.youtube.com; " +
       "img-src 'self' https://static-cdn.jtvnw.net https://howlongtobeat.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data: blob:; " +
       "media-src 'self' blob:; " +
@@ -134,6 +135,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
   setupCommands(app);
   setupChatTimers(app);
   setupFortnite(app);
+  setupWow(app);
   setupSecurity(app);
   setupAlertSounds(app);
   setupAvatars(app);

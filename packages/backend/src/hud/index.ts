@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { ApiClient } from '@twurple/api';
 import { authProvider, currentUser } from '../auth/index.js';
 import { currentYouTubeUser, fetchYouTubeHud } from '../youtube/index.js';
-import { getIO } from '../socket/index.js';
+import { emitToStreamRooms } from '../socket/index.js';
 import type { HudData } from '@streamdaemon/shared';
 import { recordSnapshot } from '../kpi/index.js';
 import { logger } from '../logger.js';
@@ -17,7 +17,12 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
       return ytHud;
     }
     const api = new ApiClient({ authProvider });
-    const user = await api.users.getUserByName(channelName);
+    const cleanName = String(channelName || '').trim().replace(/^[@#]/, '').toLowerCase();
+    const user =
+      (cleanName && /^[a-z0-9_]{2,25}$/.test(cleanName)
+        ? await api.users.getUserByName(cleanName).catch(() => null)
+        : null) ??
+      (currentUser?.login ? await api.users.getUserByName(currentUser.login).catch(() => null) : null);
     if (!user) return ytHud;
 
     const stream = await api.streams.getStreamByUserId(user.id);
@@ -106,7 +111,7 @@ export function setupHud(app: FastifyInstance) {
     pollInterval = setInterval(async () => {
       const data = await fetchHud(channel);
       if (data) {
-        getIO().to(`channel:${channel}`).emit('hud:update', data);
+        emitToStreamRooms('hud:update', data, channel);
         // Fetch active chatters count for KPI audience graph
         let chattersCount = 0;
         try {

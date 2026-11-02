@@ -4952,4 +4952,68 @@
   return lookup;
 
 }));
+
+/* StreamDaemon v0.7 Multi-Platform (Twitch + YouTube) Overlay Bridge */
+(function () {
+  if (typeof window === 'undefined' || typeof window.io !== 'function') return;
+  var origIo = window.io;
+  var CUSTOM_BADGE_OVERLAYS = /wow_forever\.html|valorant_protocol\.html|fortnite\.html|fortnite_horizontal_hud_api\.html|subnautica2\.html/i;
+
+  function wrapSocket(sock) {
+    if (!sock || sock.__sdWrapped) return sock;
+    sock.__sdWrapped = true;
+
+    sock.on('connect', function () {
+      try {
+        var ch = new URLSearchParams(window.location.search).get('channel') || 'global';
+        sock.emit('join:channel', ch);
+      } catch (e) {}
+    });
+
+    var origOn = sock.on.bind(sock);
+    sock.on = function (ev, fn) {
+      if (ev === 'chat:message' && typeof fn === 'function' && !CUSTOM_BADGE_OVERLAYS.test(window.location.pathname)) {
+        return origOn(ev, function (d) {
+          if (d && typeof d === 'object') {
+            var isYt = d.platform === 'youtube';
+            var prefix = isYt ? '[YT] ' : '[TW] ';
+            var rawName = (d.user && d.user.displayName) || d.userDisplayName || d.userName || d.username || 'Anónimo';
+            var taggedName = /^\[(YT|TW)\]\s/i.test(rawName) ? rawName : prefix + rawName;
+            var rawText = d.text || d.message || '';
+            var scPrefix = d.superChat && d.superChat.formattedAmount && !/^\[SC\s/i.test(rawText)
+              ? '[SC ' + d.superChat.formattedAmount + '] '
+              : '';
+            var enriched = Object.assign({}, d, {
+              username: taggedName,
+              userDisplayName: taggedName,
+              userName: taggedName,
+              text: scPrefix + rawText,
+              message: scPrefix + rawText,
+              user: Object.assign({}, d.user || {}, {
+                displayName: taggedName,
+                username: taggedName,
+                color: (d.superChat && d.superChat.tierColor) || (d.user && d.user.color) || (isYt ? '#FF0033' : undefined),
+              }),
+            });
+            return fn(enriched);
+          }
+          return fn(d);
+        });
+      }
+      return origOn(ev, fn);
+    };
+    return sock;
+  }
+
+  function wrappedIo() {
+    var sock = origIo.apply(this, arguments);
+    return wrapSocket(sock);
+  }
+  Object.keys(origIo).forEach(function (k) {
+    wrappedIo[k] = origIo[k];
+  });
+  wrappedIo.connect = wrappedIo;
+  wrappedIo.io = wrappedIo;
+  window.io = wrappedIo;
+})();
 //# sourceMappingURL=socket.io.js.map

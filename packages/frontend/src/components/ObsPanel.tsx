@@ -432,6 +432,22 @@ export function ObsPanel({ channel }: Props) {
   const [fnLayout, setFnLayout] = useState('stats');
   const [fnSaved, setFnSaved] = useState(false);
 
+  const [wowMode, setWowMode] = useState<'raiderio' | 'manual'>('manual');
+  const [wowRegion, setWowRegion] = useState<'eu' | 'us' | 'kr' | 'tw'>('eu');
+  const [wowRealm, setWowRealm] = useState('');
+  const [wowCharacter, setWowCharacter] = useState('');
+  const [wowPanelTitle, setWowPanelTitle] = useState('Crónicas de Azeroth');
+  const [wowPanelBadge, setWowPanelBadge] = useState('FOREVER');
+  const [wowCustomRows, setWowCustomRows] = useState<Array<{ label: string; value: string }>>([
+    { label: 'Nivel de Objeto (iLvl)', value: '639 Mythic' },
+    { label: 'Piedra Angular M+', value: '+16 En Tiempo' },
+    { label: 'Índice Mítico (RIO)', value: '3,480' },
+    { label: 'Progreso de Banda', value: '8/8 Mítico' },
+  ]);
+  const [wowBusy, setWowBusy] = useState(false);
+  const [wowSaved, setWowSaved] = useState(false);
+  const [wowStatusMsg, setWowStatusMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
   const [obsConnected, setObsConnected] = useState(false);
   const [obsApplyingId, setObsApplyingId] = useState<string | null>(null);
 
@@ -451,6 +467,23 @@ export function ObsPanel({ channel }: Props) {
       if (data.epicUsername) setFnEpicUsername(data.epicUsername);
       if (data.statsMode) setFnStatsMode(data.statsMode);
       if (data.layout) setFnLayout(data.layout);
+    }).catch(() => {});
+
+    apiGet('/wow/config').then(async (r) => {
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data.mode === 'raiderio' || data.mode === 'manual') setWowMode(data.mode);
+      if (data.region) setWowRegion(data.region);
+      if (data.realm !== undefined) setWowRealm(data.realm);
+      if (data.character !== undefined) setWowCharacter(data.character);
+      if (data.panelTitle) setWowPanelTitle(data.panelTitle);
+      if (data.panelBadge) setWowPanelBadge(data.panelBadge);
+      if (Array.isArray(data.customRows) && data.customRows.length === 4) {
+        setWowCustomRows(data.customRows.map((row: { label: string; value: string }) => ({
+          label: row.label,
+          value: row.value,
+        })));
+      }
     }).catch(() => {});
   }, []);
 
@@ -582,6 +615,51 @@ export function ObsPanel({ channel }: Props) {
     if (fnApiKey) { setFnHasKey(true); setFnApiKey(''); setFnEditingKey(false); }
     toast.success(t('obs.guardadoConfig'));
     setTimeout(() => setFnSaved(false), 3000);
+  };
+
+  const saveWowConfig = async () => {
+    setWowBusy(true);
+    setWowStatusMsg(null);
+    try {
+      const r = await apiPut('/wow/config', {
+        mode: wowMode,
+        region: wowRegion,
+        realm: wowRealm,
+        character: wowCharacter,
+        panelTitle: wowPanelTitle,
+        panelBadge: wowPanelBadge,
+        customRows: wowCustomRows,
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setWowStatusMsg({ type: 'err', text: data.error || 'Error al guardar configuración de WoW' });
+      } else {
+        setWowSaved(true);
+        setTimeout(() => setWowSaved(false), 3000);
+        if (wowMode === 'raiderio' && data.stats?.error) {
+          setWowStatusMsg({
+            type: 'err',
+            text: `Guardado, pero Raider.IO respondió: ${data.stats.error} (se usarán los datos manuales mientras tanto).`,
+          });
+        } else if (wowMode === 'raiderio' && data.stats?.source === 'raiderio' && Array.isArray(data.stats.rows)) {
+          const summary = data.stats.rows.map((row: { label: string; value: string }) => `${row.label}: ${row.value}`).join(' · ');
+          setWowStatusMsg({
+            type: 'ok',
+            text: `✓ Conectado a Raider.IO (${data.stats.character?.name} - ${data.stats.character?.realm}): ${summary}`,
+          });
+        } else {
+          setWowStatusMsg({
+            type: 'ok',
+            text: '✓ Datos manuales actualizados en vivo en los 3 overlays de World of Warcraft (Forever, Horda y Alianza).',
+          });
+        }
+        toast.success(t('obs.guardadoConfig'));
+      }
+    } catch (err) {
+      setWowStatusMsg({ type: 'err', text: err instanceof Error ? err.message : 'Error de red' });
+    } finally {
+      setWowBusy(false);
+    }
   };
 
   function getFilteredOverlays(): OverlayEntry[] {
@@ -1317,6 +1395,177 @@ export function ObsPanel({ channel }: Props) {
                 {t('obs.guardarConfig')}
               </button>
               {fnSaved && <span className={styles.fnSavedText}>✓ {cleanLabel(t('obs.guardadoConfig'))}</span>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Contextual World of Warcraft Config (Surfaced when WoW: Forever, Horda, or Alianza is active) ── */}
+      {(selectedTheme === 'wow-forever' || selectedTheme === 'wow' || selectedTheme === 'alliance') && (
+        <div className={`glass-card ${styles.fnPanel}`} style={{ borderColor: 'rgba(245, 197, 66, 0.35)' }}>
+          <div className={styles.fnPanelHeader}>
+            <h4 className={styles.fnPanelTitle}>
+              <span style={{ color: '#f5c542', display: 'inline-flex' }}>
+                <ThemeArtwork themeId="wow-forever" />
+              </span>
+              World of Warcraft · Raider.IO & Datos Personalizados (Forever · Horda · Alianza)
+            </h4>
+            <div className="flex-row--gap-sm">
+              <button
+                type="button"
+                onClick={() => { setWowMode('raiderio'); setWowStatusMsg(null); }}
+                className={`sf-btn ${wowMode === 'raiderio' ? 'sf-btn-primary' : 'sf-btn-ghost'}`}
+                style={{ fontSize: '0.74rem', padding: '0.32rem 0.75rem' }}
+              >
+                🌐 Automático Raider.IO
+              </button>
+              <button
+                type="button"
+                onClick={() => { setWowMode('manual'); setWowStatusMsg(null); }}
+                className={`sf-btn ${wowMode === 'manual' ? 'sf-btn-primary' : 'sf-btn-ghost'}`}
+                style={{ fontSize: '0.74rem', padding: '0.32rem 0.75rem' }}
+              >
+                ✍️ Personalizar Datos a Mano
+              </button>
+            </div>
+          </div>
+
+          {wowMode === 'raiderio' ? (
+            <div className={styles.fnGrid}>
+              <div>
+                <label className={styles.fnConfigBlockLabel}>Región (Raider.IO · Sin API Key)</label>
+                <div className="flex-wrap" style={{ gap: '0.35rem', display: 'flex' }}>
+                  {(['eu', 'us', 'kr', 'tw'] as const).map((reg) => (
+                    <button
+                      key={reg}
+                      type="button"
+                      onClick={() => setWowRegion(reg)}
+                      className={`sf-pill-selector__pill ${wowRegion === reg ? 'sf-pill-selector__pill--active' : ''}`}
+                      style={{ textTransform: 'uppercase', fontSize: '0.74rem' }}
+                    >
+                      {reg}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className={styles.fnConfigBlockLabel}>Reino / Servidor</label>
+                <input
+                  type="text"
+                  value={wowRealm}
+                  onChange={(e) => setWowRealm(e.target.value)}
+                  placeholder="Ej: Sanguino, Dun Modr, Zul'jin, Ragnaros..."
+                  className="sf-input w-full text-xs"
+                />
+              </div>
+
+              <div>
+                <label className={styles.fnConfigBlockLabel}>Nombre del Personaje</label>
+                <input
+                  type="text"
+                  value={wowCharacter}
+                  onChange={(e) => setWowCharacter(e.target.value)}
+                  placeholder="Ej: Thrall"
+                  className="sf-input w-full text-xs"
+                />
+              </div>
+
+              <div>
+                <label className={styles.fnConfigBlockLabel}>Título del Panel en el Overlay</label>
+                <input
+                  type="text"
+                  value={wowPanelTitle}
+                  onChange={(e) => setWowPanelTitle(e.target.value)}
+                  placeholder="Crónicas de Azeroth"
+                  className="sf-input w-full text-xs"
+                />
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div className={styles.fnGrid}>
+                <div>
+                  <label className={styles.fnConfigBlockLabel}>Título del Menú / Panel</label>
+                  <input
+                    type="text"
+                    value={wowPanelTitle}
+                    onChange={(e) => setWowPanelTitle(e.target.value)}
+                    placeholder="Crónicas de Azeroth"
+                    className="sf-input w-full text-xs"
+                  />
+                </div>
+                <div>
+                  <label className={styles.fnConfigBlockLabel}>Insignia / Servidor (Esquina derecha)</label>
+                  <input
+                    type="text"
+                    value={wowPanelBadge}
+                    onChange={(e) => setWowPanelBadge(e.target.value)}
+                    placeholder="FOREVER / HORDA / ALIANZA"
+                    className="sf-input w-full text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className={styles.fnGrid}>
+                {wowCustomRows.map((row, idx) => (
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    <label className={styles.fnConfigBlockLabel}>{`Dato #${idx + 1} (Etiqueta y Valor)`}</label>
+                    <div className="flex-row--gap-sm">
+                      <input
+                        type="text"
+                        value={row.label}
+                        onChange={(e) => {
+                          const next = [...wowCustomRows];
+                          next[idx] = { ...next[idx], label: e.target.value };
+                          setWowCustomRows(next);
+                        }}
+                        placeholder="Etiqueta (ej. Nivel de Objeto)"
+                        className="sf-input text-xs"
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="text"
+                        value={row.value}
+                        onChange={(e) => {
+                          const next = [...wowCustomRows];
+                          next[idx] = { ...next[idx], value: e.target.value };
+                          setWowCustomRows(next);
+                        }}
+                        placeholder="Valor (ej. 639 Mythic)"
+                        className="sf-input text-xs"
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className={styles.fnFooter} style={{ marginTop: '0.85rem' }}>
+            <div className="flex-row flex-wrap" style={{ gap: '0.75rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                disabled={wowBusy}
+                onClick={saveWowConfig}
+                className={`sf-btn sf-btn-primary ${styles.fnSaveBtn}`}
+              >
+                {wowBusy
+                  ? 'Sincronizando...'
+                  : wowMode === 'raiderio'
+                    ? '🔍 Conectar Raider.IO y Actualizar Overlays'
+                    : '💾 Guardar Datos Personalizados en Overlays'}
+              </button>
+              {wowSaved && <span className={styles.fnSavedText}>✓ {cleanLabel(t('obs.guardadoConfig'))}</span>}
+              {wowStatusMsg && (
+                <span
+                  className="text-xs"
+                  style={{ color: wowStatusMsg.type === 'ok' ? 'var(--sf-success)' : 'var(--sf-warning)' }}
+                >
+                  {wowStatusMsg.text}
+                </span>
+              )}
             </div>
           </div>
         </div>

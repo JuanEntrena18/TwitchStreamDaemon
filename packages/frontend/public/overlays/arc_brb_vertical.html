@@ -110,8 +110,8 @@
         setTimeout(() => appendMessage("Raider_Alpha", "Apuntando a las coordenadas de extracción"), 1500);
         setTimeout(() => appendMessage("Dron_Tech", "Cobertura aérea asegurada."), 3000);
     
-        const BACKEND_URL = window.location.protocol + '//' + window.location.host;
-        const CHANNEL = new URLSearchParams(window.location.search).get('channel') || 'default';
+        const BACKEND_URL = (new URLSearchParams(window.location.search).get('backend') || 'http://localhost:3000').replace(/\/+$/, '');
+        const CHANNEL = new URLSearchParams(window.location.search).get('channel') || 'global';
         let socket;
 
         function initSocket() {
@@ -146,8 +146,14 @@
                     appendMessage(rewardTitle, `por ${userDisplayName}`, '#ff6b00');
                 });
 
-                socket.on('chat:message', ({ username, message, color }) => {
-                    appendMessage(username, message, color);
+                socket.on('chat:message', (d) => {
+                    const plat = d.platform === 'youtube' ? '[YT] ' : '[TW] ';
+                    const sc = d.superChat?.formattedAmount ? `[SC ${d.superChat.formattedAmount}] ` : '';
+                    appendMessage(
+                        plat + (d.user?.displayName || d.username || 'Anónimo'),
+                        sc + (d.text || d.message || ''),
+                        d.superChat?.tierColor || d.user?.color || d.color || '#00f2fe'
+                    );
                 });
             } catch(e) {
                 console.error("Socket fallback", e);

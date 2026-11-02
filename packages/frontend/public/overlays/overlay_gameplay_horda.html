@@ -109,6 +109,13 @@
 
         .user { font-weight: 700; color: #ff4444; margin-right: 8px; text-shadow: 1px 1px 2px #000;}
         .text { color: #fff; }
+        #horde-wow-stats { position: absolute; top: 34px; left: 34px; width: 310px; background: rgba(15, 4, 4, 0.90); border: 2px solid #8b0000; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85), inset 0 0 18px rgba(255, 0, 0, 0.15); z-index: 50; font-family: 'Roboto', sans-serif; }
+        .horde-stats-hdr { font-family: 'Cinzel', serif; background: linear-gradient(90deg, #5a0000, #8b0000); border-bottom: 2px solid #ff2222; padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; letter-spacing: 1.5px; color: #fff; text-transform: uppercase; }
+        .horde-stats-badge { font-size: 10px; padding: 2px 7px; background: rgba(0, 0, 0, 0.5); border: 1px solid #ff4444; color: #ffcc00; border-radius: 3px; }
+        .horde-stats-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+        .horde-stat-row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+        .horde-stat-lbl { color: #fca5a5; }
+        .horde-stat-val { font-family: 'Cinzel', serif; font-weight: 700; color: #ffcc00; }
 
         #overlay-root {
             position: absolute;
@@ -132,6 +139,18 @@
 
     <!-- Monitor Izquierdo (Juego) -->
     <div class="game-area"></div>
+    <div id="horde-wow-stats">
+        <div class="horde-stats-hdr">
+            <span id="horde-wow-title">⚔️ Crónicas de la Horda</span>
+            <span class="horde-stats-badge" id="horde-wow-badge">HORDA</span>
+        </div>
+        <div class="horde-stats-body" id="horde-wow-rows">
+            <div class="horde-stat-row"><span class="horde-stat-lbl">Nivel de Objeto (iLvl)</span><span class="horde-stat-val">639 Mythic</span></div>
+            <div class="horde-stat-row"><span class="horde-stat-lbl">Piedra Angular M+</span><span class="horde-stat-val">+16 En Tiempo</span></div>
+            <div class="horde-stat-row"><span class="horde-stat-lbl">Índice Mítico (RIO)</span><span class="horde-stat-val">3,480</span></div>
+            <div class="horde-stat-row"><span class="horde-stat-lbl">Progreso de Banda</span><span class="horde-stat-val">8/8 Mítico</span></div>
+        </div>
+    </div>
 
     <!-- Panel Derecho -->
     <div class="side-panel">
@@ -189,7 +208,47 @@
         }
 
         function initSocket() {
+        function applyWowStats(data) {
+            if (!data) return;
+            const tEl = document.getElementById('horde-wow-title');
+            const bEl = document.getElementById('horde-wow-badge');
+            const rEl = document.getElementById('horde-wow-rows');
+            if (tEl && data.panelTitle) tEl.textContent = '⚔️ ' + data.panelTitle;
+            if (bEl && data.panelBadge) bEl.textContent = data.panelBadge;
+            if (rEl && Array.isArray(data.rows) && data.rows.length > 0) {
+                rEl.innerHTML = '';
+                data.rows.forEach(r => {
+                    const row = document.createElement('div');
+                    row.className = 'horde-stat-row';
+                    const l = document.createElement('span');
+                    l.className = 'horde-stat-lbl';
+                    l.textContent = r.label || '';
+                    const v = document.createElement('span');
+                    v.className = 'horde-stat-val';
+                    v.textContent = r.value || '';
+                    row.appendChild(l);
+                    row.appendChild(v);
+                    rEl.appendChild(row);
+                });
+            }
+        }
+        function fetchWowStats() {
+            const qs = new URLSearchParams();
+            if (params.get('region')) qs.set('region', params.get('region'));
+            if (params.get('realm')) qs.set('realm', params.get('realm'));
+            if (params.get('character')) qs.set('character', params.get('character'));
+            if (params.get('wowMode')) qs.set('mode', params.get('wowMode'));
+            const qStr = qs.toString() ? '?' + qs.toString() : '';
+            fetch(BACKEND_URL + '/wow/stats' + qStr)
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d) applyWowStats(d); })
+                .catch(() => {});
+        }
+        fetchWowStats();
+        setInterval(fetchWowStats, 180000);
+        function initSocket() {
             const socket = io(BACKEND_URL, { transports: ['websocket'] });
+            socket.on('wow:stats-updated', applyWowStats);
             socket.on('connect', () => {
 
                 if (CHANNEL) socket.emit('join:channel', CHANNEL);

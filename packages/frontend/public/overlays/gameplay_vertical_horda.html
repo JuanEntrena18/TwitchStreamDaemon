@@ -121,9 +121,31 @@
                 appendMessage(payload.username, payload.message, payload.color);
             }
         });
+
+        const params = new URLSearchParams(window.location.search);
+        const BACKEND_URL = (params.get('backend') || 'http://localhost:3000').replace(/\/+$/, '');
+        const CHANNEL = params.get('channel') || 'global';
+
+        function initSocket() {
+            const socket = io(BACKEND_URL, { transports: ['websocket'] });
+            socket.on('connect', () => {
+                socket.emit('join:channel', CHANNEL);
+            });
+            socket.on('chat:message', (d) => {
+                const plat = d.platform === 'youtube' ? '[YT] ' : '[TW] ';
+                const sc = d.superChat?.formattedAmount ? `[SC ${d.superChat.formattedAmount}] ` : '';
+                appendMessage(
+                    plat + (d.user?.displayName || d.userDisplayName || d.userName || 'Anónimo'),
+                    sc + (d.text || ''),
+                    d.superChat?.tierColor || d.user?.color || '#ff4444'
+                );
+            });
+        }
+
+        const s = document.createElement('script');
+        s.src = './js/socket.io.js';
+        s.onload = initSocket;
+        document.head.appendChild(s);
     </script>
-    
-    <!-- Script de React -->
-    <script type="module" src="./src/overlay.tsx"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 import { EventSubWsListener } from '@twurple/eventsub-ws';
 import { ApiClient } from '@twurple/api';
 import { authProvider, currentUser } from '../auth/index.js';
-import { getIO } from '../socket/index.js';
+import { emitToStreamRooms } from '../socket/index.js';
 import { recordEvent } from '../activity/index.js';
 import { getActiveGiveaway } from '../giveaways/index.js';
 import { getAddTicketsFn } from '../chat/index.js';
@@ -13,7 +13,7 @@ import crypto from 'crypto';
 let listener: EventSubWsListener | null = null;
 
 function emit(channel: string, event: string, data: unknown) {
-  getIO().to(`channel:${channel}`).emit(event, data);
+  emitToStreamRooms(event, data, channel);
 }
 
 function trySubscribe(label: string, fn: () => void) {

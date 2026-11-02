@@ -202,6 +202,55 @@
     0%, 100% { opacity: 0.05; transform: translate(-50%, -50%) scale(1); }
     50% { opacity: 0.1; transform: translate(-50%, -50%) scale(1.08); }
   }
+  #alliance-wow-stats {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 440px;
+    background: rgba(10, 14, 39, 0.90);
+    border: 1.5px solid rgba(255, 200, 0, 0.55);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 24px rgba(43, 95, 200, 0.35);
+    z-index: 20;
+    overflow: hidden;
+  }
+  .all-stats-hdr {
+    background: linear-gradient(90deg, rgba(43, 95, 200, 0.45), rgba(255, 200, 0, 0.2));
+    border-bottom: 1px solid rgba(255, 200, 0, 0.45);
+    padding: 7px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .all-stats-badge {
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 99px;
+    background: rgba(43, 95, 200, 0.35);
+    border: 1px solid var(--lblue);
+    color: #fff;
+  }
+  .all-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 14px;
+    padding: 10px 14px;
+    font-family: 'Inter', sans-serif;
+  }
+  .all-stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+  .all-stat-lbl { color: var(--silver); }
+  .all-stat-val { font-family: 'Cinzel', serif; font-weight: 700; color: var(--gold); }
 </style>
 </head>
 <body>
@@ -254,6 +303,19 @@
 
   <div id="particles"></div>
 
+  <div id="alliance-wow-stats">
+    <div class="all-stats-hdr">
+      <span id="all-wow-title">🦁 Crónicas de la Alianza</span>
+      <span class="all-stats-badge" id="all-wow-badge">ALIANZA</span>
+    </div>
+    <div class="all-stats-grid" id="all-wow-rows">
+      <div class="all-stat-row"><span class="all-stat-lbl">iLvl</span><span class="all-stat-val">639 Mythic</span></div>
+      <div class="all-stat-row"><span class="all-stat-lbl">Piedra M+</span><span class="all-stat-val">+16</span></div>
+      <div class="all-stat-row"><span class="all-stat-lbl">Índice RIO</span><span class="all-stat-val">3,480</span></div>
+      <div class="all-stat-row"><span class="all-stat-lbl">Banda</span><span class="all-stat-val">8/8 Mítico</span></div>
+    </div>
+  </div>
+
   <script>
     const params = new URLSearchParams(window.location.search);
     const username = params.get('username') || 'Alianza';
@@ -283,9 +345,50 @@
       if (d.subscribers !== undefined) document.getElementById('subs').textContent = Number(d.subscribers).toLocaleString();
     }
 
+    function applyWowStats(data) {
+      if (!data) return;
+      const tEl = document.getElementById('all-wow-title');
+      const bEl = document.getElementById('all-wow-badge');
+      const rEl = document.getElementById('all-wow-rows');
+      if (tEl && data.panelTitle) tEl.textContent = '🦁 ' + data.panelTitle;
+      if (bEl && data.panelBadge) bEl.textContent = data.panelBadge;
+      if (rEl && Array.isArray(data.rows) && data.rows.length > 0) {
+        rEl.innerHTML = '';
+        data.rows.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'all-stat-row';
+          const l = document.createElement('span');
+          l.className = 'all-stat-lbl';
+          l.textContent = r.label || '';
+          const v = document.createElement('span');
+          v.className = 'all-stat-val';
+          v.textContent = r.value || '';
+          row.appendChild(l);
+          row.appendChild(v);
+          rEl.appendChild(row);
+        });
+      }
+    }
+
+    function fetchWowStats() {
+      const qs = new URLSearchParams();
+      if (params.get('region')) qs.set('region', params.get('region'));
+      if (params.get('realm')) qs.set('realm', params.get('realm'));
+      if (params.get('character')) qs.set('character', params.get('character'));
+      if (params.get('wowMode')) qs.set('mode', params.get('wowMode'));
+      const qStr = qs.toString() ? '?' + qs.toString() : '';
+      fetch(BACKEND_URL + '/wow/stats' + qStr)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) applyWowStats(d); })
+        .catch(() => {});
+    }
+    fetchWowStats();
+    setInterval(fetchWowStats, 180000);
+
     function initSocket() {
       console.log('[HUD] initSocket, BACKEND_URL=' + BACKEND_URL + ', CHANNEL=' + CHANNEL);
       const socket = io(BACKEND_URL, { transports: ['websocket'] });
+      socket.on('wow:stats-updated', applyWowStats);
       socket.on('connect', () => {
         console.log('[HUD] socket connected');
         if (!CHANNEL) { console.warn('[HUD] no channel'); return; }

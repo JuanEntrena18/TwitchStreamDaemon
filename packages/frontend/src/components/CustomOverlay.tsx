@@ -39,8 +39,9 @@ export function CustomOverlay({ channel }: Props) {
   }, []));
 
   useEffect(() => {
-    if (channel && connected) {
-      socket.emit('join:channel', channel);
+    if (connected) {
+      socket.emit('join:channel', channel || 'global');
+    // joined above
     }
   }, [channel, connected, socket]);
 
@@ -116,6 +117,8 @@ export function CustomOverlay({ channel }: Props) {
                   >
                     {msg.user.displayName.charAt(0).toUpperCase()}
                   </div>
+                  <span style={{ fontSize: '9px', fontWeight: 900, padding: '1px 4px', borderRadius: 3, background: msg.platform === 'youtube' ? '#ff0033' : '#9146ff', color: '#fff' }}>{msg.platform === 'youtube' ? 'YT' : 'TW'}</span>
+                  {msg.superChat?.formattedAmount && <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: 3, background: '#ffb300', color: '#000' }}>SC {msg.superChat.formattedAmount}</span>}
                   <span className={styles.msgUser} style={{ color: msg.user.color || '#a78bfa' }}>
                     {msg.user.displayName}
                   </span>

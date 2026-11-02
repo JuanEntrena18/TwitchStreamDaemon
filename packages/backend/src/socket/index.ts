@@ -45,10 +45,18 @@ export function setupSocketIO(app: FastifyInstance) {
 
   io.on('connection', (socket) => {
     logger.info({ socketId: socket.id, authenticated: !!socket.data.authenticated }, 'Client connected');
+    socket.join('channel:global');
 
     socket.on('join:channel', async (channel: string) => {
-      socket.join(`channel:${channel}`);
-      await joinChannel(channel);
+      const raw = String(channel || '').trim();
+      const clean = raw.replace(/^[@#]/, '').toLowerCase();
+      socket.join('channel:global');
+      if (raw) socket.join(`channel:${raw}`);
+      if (clean) {
+        socket.join(`channel:${clean}`);
+        await joinChannel(clean);
+      }
+      // handled above
     });
 
     socket.on('leave:channel', async (channel: string) => {
@@ -101,4 +109,13 @@ export function setupSocketIO(app: FastifyInstance) {
 export function getIO(): SocketIOServer {
   if (!io) throw new Error('Socket.IO not initialized');
   return io;
+}
+
+export function emitToStreamRooms(event: string, payload: unknown, channel?: string) {
+  if (!io) return;
+  const clean = String(channel || '').trim().replace(/^[@#]/, '').toLowerCase();
+  let broadcast = io.to('channel:global');
+  if (clean) broadcast = broadcast.to(`channel:${clean}`);
+  if (channel && channel !== clean) broadcast = broadcast.to(`channel:${channel}`);
+  broadcast.emit(event, payload);
 }

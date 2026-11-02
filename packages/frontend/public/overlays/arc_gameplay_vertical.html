@@ -115,8 +115,8 @@
 
         // Chat is now handled by WebSockets directly
     
-        const BACKEND_URL = window.location.protocol + '//' + window.location.host;
-        const CHANNEL = new URLSearchParams(window.location.search).get('channel') || 'default';
+        const BACKEND_URL = (new URLSearchParams(window.location.search).get('backend') || 'http://localhost:3000').replace(/\/+$/, '');
+        const CHANNEL = new URLSearchParams(window.location.search).get('channel') || 'global';
         let socket;
 
         function initSocket() {
@@ -126,8 +126,10 @@
                     socket.emit('join:channel', CHANNEL);
                 });
 
-                socket.on('chat:message', ({ user, text }) => {
-                    appendMessage(user.displayName || user.username, text, user.color);
+                socket.on('chat:message', (d) => {
+                    const plat = d.platform === 'youtube' ? '[YT] ' : '[TW] ';
+                    const sc = d.superChat?.formattedAmount ? `[SC ${d.superChat.formattedAmount}] ` : '';
+                    appendMessage(plat + (d.user?.displayName || d.user?.username || 'Anónimo'), sc + (d.text || ''), d.superChat?.tierColor || d.user?.color || '#ff6b00');
                 });
 
                 socket.on('hud:update', (data) => {
