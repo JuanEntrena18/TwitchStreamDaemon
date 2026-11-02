@@ -1,4 +1,4 @@
-export type OverlayCategory = 'general' | 'dj' | '8bits' | 'win95' | 'retrowave' | 'tactical' | 'wow-alliance' | 'wow-horde' | 'cyberpunk' | 'extraction';
+export type OverlayCategory = 'general' | 'dj' | '8bits' | 'win95' | 'retrowave' | 'tactical' | 'wow-alliance' | 'wow-horde' | 'wow-forever' | 'valorant' | 'cyberpunk' | 'extraction';
 
 export interface OverlayEntry {
   id: string;
@@ -31,6 +31,8 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: 'tactical',     labelKey: 'obs.catTactical',    icon: '🛸', color: '#ffb300', themeId: 'tactical' },
   { id: 'wow-alliance', labelKey: 'obs.catAlliance',    icon: '🔵', color: '#4a8cff', themeId: 'alliance' },
   { id: 'wow-horde',    labelKey: 'obs.catHorde',       icon: '🔴', color: '#ff2222', themeId: 'wow' },
+  { id: 'wow-forever',  labelKey: 'obs.catWowForever',  icon: '⚜️', color: '#f5c542', themeId: 'wow-forever' },
+  { id: 'valorant',     labelKey: 'obs.catValorant',    icon: '🎯', color: '#ff4655', themeId: 'valorant' },
   { id: 'cyberpunk',    labelKey: 'obs.catCyberpunk',   icon: '🌆', color: '#ff003c', themeId: 'cyberpunk' },
   { id: 'extraction',   labelKey: 'obs.catExtraction',  icon: '🎯', color: '#ff6b00', themeId: 'extraction' },
 ];
@@ -143,6 +145,12 @@ export const OVERLAY_REGISTRY: OverlayEntry[] = [
   { id: 'wow-horde-chat-standalone',    icon: '💬', labelKey: 'obs.hordaChatStandalone',      descKey: 'obs.hordaChatStandaloneDesc',      mode: 'wow-horde-chat-standalone',    supportsTheme: false, color: '#8b0000', filename: 'chat_independiente_horda.html',                category: 'wow-horde', orientation: 'horizontal' },
   { id: 'wow-horde-alerts-fullscreen',  icon: '🔔', labelKey: 'obs.hordaAlertsFullscreen',    descKey: 'obs.hordaAlertsFullscreenDesc',    mode: 'wow-horde-alerts-fullscreen',  supportsTheme: false, color: '#ff2222', filename: 'alerta_horda.html',                           category: 'wow-horde', orientation: 'horizontal' },
   { id: 'wow-horde-brb',               icon: '⏳', labelKey: 'obs.brbHorda',                 descKey: 'obs.brbHordaDesc',               mode: 'wow-horde-brb',               supportsTheme: false, color: '#ff2222', filename: 'brb_horda.html',                                category: 'wow-horde', orientation: 'horizontal' },
+
+  // ── World of Warcraft: FOREVER (Modular) ──
+  { id: 'wow-forever',                 icon: '⚜️', labelKey: 'obs.wowForever',               descKey: 'obs.wowForeverDesc',             mode: 'wow-forever',                 supportsTheme: false, color: '#f5c542', filename: 'wow_forever.html',                              category: 'wow-forever', orientation: 'horizontal', isNew: true },
+
+  // ── VALORANT Protocol (Modular) ──
+  { id: 'valorant-protocol',           icon: '🎯', labelKey: 'obs.valorantProtocol',         descKey: 'obs.valorantProtocolDesc',       mode: 'valorant-protocol',           supportsTheme: false, color: '#ff4655', filename: 'valorant_protocol.html',                        category: 'valorant', orientation: 'horizontal', isNew: true },
 
   // ── Vertical (1080×1920) ──
   { id: 'fortnite-vertical',         icon: '📱', labelKey: 'obs.fortniteVertical',     descKey: 'obs.fortniteVerticalDesc',     mode: 'fortnite-vertical',         supportsTheme: false, color: '#00D4FF', filename: 'fortnite-vertical.html',                     category: 'general', orientation: 'vertical' },

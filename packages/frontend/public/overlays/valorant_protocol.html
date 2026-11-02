@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamDaemon – VALORANT Protocol Overlay</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Teko:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Inter:wght@500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --red:       #FF4655;
+    --red-glow:  rgba(255, 70, 85, 0.45);
+    --slate:     #0F1923;
+    --slate-panel: rgba(15, 25, 35, 0.90);
+    --bone:      #ECE8E1;
+    --radianite: #00F5D4;
+    --gold:      #F5C542;
+    --muted:     #8B978F;
+  }
+
+  html, body {
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: transparent;
+    font-family: 'Rajdhani', sans-serif;
+    color: var(--bone);
+    user-select: none;
+  }
+
+  /* ──────────────────────────────────── MODO WIDGET INDEPENDIENTE (?widget=...) */
+  body.widget-standalone {
+    width: 100vw !important;
+    height: 100vh !important;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 8px;
+  }
+  body.widget-standalone #particles,
+  body.widget-standalone .val-grid-hud,
+  body.widget-standalone .val-corner,
+  body.widget-standalone #edit-toolbar {
+    display: none !important;
+  }
+  body.widget-standalone [data-widget-id] {
+    display: none !important;
+  }
+  body.widget-standalone [data-widget-id].widget-active {
+    display: flex !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    margin: 0 !important;
+  }
+  body.widget-standalone[data-active-widget="info-bar"] {
+    padding: 0;
+    align-items: flex-end;
+  }
+  body.widget-standalone[data-active-widget="info-bar"] #stream-title-bar.widget-active {
+    width: 100vw !important;
+  }
+  body.widget-standalone[data-active-widget="alerts"] {
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  body.widget-standalone[data-active-widget="alerts"] #alert-zone.widget-active {
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+  }
+  body.widget-standalone[data-active-widget="chat"] #val-chat.widget-active {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    max-height: none;
+  }
+
+  /* Capas ocultas mediante ?hide=a,b */
+  [data-widget-id].widget-hidden {
+    display: none !important;
+  }
+
+  /* ──────────────────────────────────── MODO INTERACTIVO DRAG & DROP (?edit=true) */
+  body.edit-mode {
+    background: radial-gradient(circle at center, rgba(15, 25, 35, 0.55) 0%, rgba(10, 16, 23, 0.90) 100%);
+  }
+  body.edit-mode [data-widget-id] {
+    cursor: grab !important;
+    pointer-events: auto !important;
+    outline: 2px dashed var(--red);
+    outline-offset: 6px;
+    transition: outline-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  body.edit-mode [data-widget-id]:hover {
+    outline-color: var(--radianite);
+    box-shadow: 0 0 26px var(--red-glow);
+  }
+  body.edit-mode [data-widget-id].dragging {
+    cursor: grabbing !important;
+    outline: 2px solid var(--radianite);
+    z-index: 999 !important;
+  }
+  body.edit-mode #alert-zone {
+    min-width: 480px;
+    min-height: 140px;
+    background: rgba(255, 70, 85, 0.08);
+  }
+  body.edit-mode #alert-zone::after {
+    content: '🎯 ZONA DE ALERTAS // ACE BANNER (ARRASTRAR AQUÍ)';
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--red);
+    padding: 14px 22px;
+    pointer-events: none;
+  }
+
+  #edit-toolbar {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    background: #0F1923;
+    border: 2px solid var(--red);
+    padding: 8px 20px;
+    clip-path: polygon(0 0, 97% 0, 100% 25%, 100% 100%, 3% 100%, 0 75%);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+  }
+  body.edit-mode #edit-toolbar {
+    display: flex;
+  }
+  .edit-toolbar-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bone);
+    letter-spacing: 2px;
+  }
+  .edit-btn {
+    background: rgba(255, 70, 85, 0.18);
+    color: var(--bone);
+    border: 1px solid var(--red);
+    padding: 5px 14px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .edit-btn:hover {
+    background: var(--red);
+    color: #fff;
+  }
+  .edit-btn.warn {
+    border-color: var(--radianite);
+    background: rgba(0, 245, 212, 0.12);
+  }
+  .edit-btn.warn:hover {
+    background: var(--radianite);
+    color: #0F1923;
+  }
+
+  /* ──────────────────────────────────── CANVAS & ELEMENTOS TÁCTICOS */
+  #particles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .val-corner {
+    position: absolute;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: rgba(236, 232, 225, 0.35);
+    letter-spacing: 2px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .val-corner.tl { top: 10px; left: 28px; }
+  .val-corner.tr { top: 10px; right: 28px; }
+
+  /* Panel angular táctico */
+  .val-panel {
+    background: var(--slate-panel);
+    border-left: 4px solid var(--red);
+    border-top: 1px solid rgba(236, 232, 225, 0.18);
+    border-right: 1px solid rgba(236, 232, 225, 0.12);
+    border-bottom: 1px solid rgba(236, 232, 225, 0.18);
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+    position: relative;
+  }
+  .val-panel::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    background: var(--red);
+  }
+
+  /* ──────────────────────────────────── 1. DATOS DE STREAMING (stream-stats) */
+  #hud {
+    position: absolute;
+    top: 28px;
+    left: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 300px;
+    z-index: 20;
+  }
+  .stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 18px;
+  }
+  .stat-row.radianite {
+    border-left-color: var(--radianite);
+  }
+  .stat-row.radianite::after {
+    background: var(--radianite);
+  }
+  .stat-row.gold {
+    border-left-color: var(--gold);
+  }
+  .stat-row.gold::after {
+    background: var(--gold);
+  }
+  .stat-meta {
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--red);
+    letter-spacing: 1.5px;
+  }
+  .stat-row.radianite .stat-code { color: var(--radianite); }
+  .stat-row.gold .stat-code { color: var(--gold); }
+
+  .stat-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--bone);
+  }
+  .stat-value {
+    font-family: 'Teko', sans-serif;
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 0.9;
+    color: var(--bone);
+    letter-spacing: 1px;
+  }
+  .stat-row.radianite .stat-value { color: var(--radianite); }
+  .stat-row.gold .stat-value { color: var(--gold); }
+
+  /* ──────────────────────────────────── 2. TIEMPO EN DIRECTO + REPORTE TÁCTICO (career-stats) */
+  #right-panel {
+    position: absolute;
+    top: 28px;
+    right: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 320px;
+    z-index: 20;
+  }
+  #uptime-block {
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-left-color: var(--radianite);
+  }
+  .uptime-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--radianite);
+    text-transform: uppercase;
+  }
+  .uptime-value {
+    font-family: 'Teko', sans-serif;
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 0.95;
+    color: var(--bone);
+    letter-spacing: 2px;
+  }
+
+  #val-combat-report {
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .combat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 70, 85, 0.35);
+    margin-bottom: 4px;
+  }
+  .combat-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--red);
+  }
+  .combat-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    background: rgba(255, 70, 85, 0.2);
+    border: 1px solid var(--red);
+    color: var(--bone);
+  }
+  .combat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .combat-key { color: var(--muted); }
+  .combat-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--bone);
+  }
+  .combat-val.red { color: var(--red); }
+  .combat-val.radianite { color: var(--radianite); }
+  .combat-val.gold { color: var(--gold); }
+
+  /* ──────────────────────────────────── 3. CHAT DE COMUNICACIONES (chat) */
+  #val-chat {
+    position: absolute;
+    bottom: 82px;
+    left: 28px;
+    width: 430px;
+    height: 340px;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+  }
+  .val-chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 16px;
+    background: rgba(255, 70, 85, 0.16);
+    border-bottom: 1px solid rgba(255, 70, 85, 0.4);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--bone);
+  }
+  .val-chat-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--radianite);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .val-chat-status::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    background: var(--radianite);
+    box-shadow: 0 0 8px var(--radianite);
+  }
+  .val-chat-messages {
+    flex: 1;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+  }
+  .chat-msg {
+    background: rgba(236, 232, 225, 0.05);
+    border-left: 3px solid var(--red);
+    padding: 6px 10px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    animation: val-msg-in 0.2s ease-out forwards;
+  }
+  .chat-msg.superchat {
+    background: linear-gradient(90deg, rgba(0, 245, 212, 0.22) 0%, rgba(15, 25, 35, 0.92) 100%);
+    border-left: 3px solid var(--radianite);
+  }
+  @keyframes val-msg-in {
+    from { opacity: 0; transform: translateX(-14px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .chat-plat {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    margin-right: 5px;
+  }
+  .chat-plat.yt {
+    background: var(--red);
+    color: #fff;
+  }
+  .chat-plat.tw {
+    background: #9146FF;
+    color: #fff;
+  }
+  .chat-sc-pill {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    background: var(--radianite);
+    color: #0F1923;
+    margin-right: 6px;
+  }
+  .chat-user {
+    font-weight: 700;
+    margin-right: 6px;
+  }
+  .chat-text {
+    color: var(--bone);
+    word-break: break-word;
+  }
+
+  /* ──────────────────────────────────── 4. ÚLTIMO AGENTE RECLUTADO (recent-follow) */
+  #recent-follow {
+    position: absolute;
+    bottom: 82px;
+    right: 28px;
+    width: 320px;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 20;
+  }
+  .rf-icon {
+    width: 38px;
+    height: 38px;
+    background: var(--red);
+    color: var(--bone);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Teko', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    clip-path: polygon(15% 0, 100% 0, 85% 100%, 0 100%);
+    flex-shrink: 0;
+  }
+  .rf-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .rf-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--radianite);
+    text-transform: uppercase;
+  }
+  .rf-name {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ──────────────────────────────────── 5. BARRA INFERIOR DE PROTOCOLO (info-bar) */
+  #stream-title-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 58px;
+    background: linear-gradient(90deg, #0F1923 0%, rgba(15, 25, 35, 0.96) 75%, #0F1923 100%);
+    border-top: 2px solid var(--red);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 28px;
+    z-index: 25;
+  }
+  #live-badge {
+    background: var(--red);
+    color: var(--bone);
+    padding: 4px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    clip-path: polygon(0 0, 92% 0, 100% 50%, 92% 100%, 0 100%);
+    flex-shrink: 0;
+  }
+  #broadcaster-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 12px;
+    background: rgba(0, 245, 212, 0.12);
+    border: 1px solid rgba(0, 245, 212, 0.45);
+    color: var(--radianite);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  #game-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--red);
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  #title-sep {
+    color: rgba(236, 232, 225, 0.35);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  #title-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+  }
+  #spike-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  /* ──────────────────────────────────── 6. ALERTAS ACE / KILLBANNER (alerts) */
+  #alert-zone {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    pointer-events: none;
+    z-index: 35;
+  }
+  .alert-card {
+    min-width: 480px;
+    background: linear-gradient(135deg, rgba(15, 25, 35, 0.97) 0%, rgba(35, 18, 26, 0.96) 100%);
+    border-left: 6px solid var(--red);
+    border-right: 6px solid var(--radianite);
+    border-top: 1px solid rgba(236, 232, 225, 0.3);
+    border-bottom: 1px solid rgba(236, 232, 225, 0.3);
+    padding: 20px 44px;
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(255, 70, 85, 0.35);
+    animation: val-alert-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+               val-alert-out 0.35s ease-in 4.65s forwards;
+  }
+  @keyframes val-alert-in {
+    from { opacity: 0; transform: scale(0.8) skewX(-8deg); }
+    to   { opacity: 1; transform: scale(1) skewX(0deg); }
+  }
+  @keyframes val-alert-out {
+    from { opacity: 1; transform: scale(1); }
+    to   { opacity: 0; transform: scale(0.9) translateY(-18px); }
+  }
+  .alert-type {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--red);
+    text-transform: uppercase;
+  }
+  .alert-user {
+    font-family: 'Teko', sans-serif;
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: 2px;
+    color: var(--bone);
+    text-transform: uppercase;
+  }
+  .alert-detail {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--radianite);
+    margin-top: 4px;
+  }
+  .alert-msg {
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div id="edit-toolbar">
+  <span class="edit-toolbar-title">🎯 MODO MOVER ELEMENTOS · VALORANT PROTOCOL</span>
+  <button type="button" class="edit-btn" id="btn-test-alert">🔔 Probar Alerta ACE</button>
+  <button type="button" class="edit-btn warn" id="btn-reset-pos">↺ Resetear Posiciones</button>
+</div>
+
+<canvas id="particles"></canvas>
+
+<div class="val-corner tl">PROTOCOL // V-07 · RADIANITE TELEMETRY ONLINE</div>
+<div class="val-corner tr">SYS // 1920x1080 · 60FPS LOCKED</div>
+
+<!-- 1. Datos de Streaming (stream-stats) -->
+<div id="hud" data-widget-id="stream-stats">
+  <div class="stat-row val-panel">
+    <div class="stat-meta">
+      <span class="stat-code">// 01 · SPECTATORS</span>
+      <span class="stat-label">Espectadores</span>
+    </div>
+    <span class="stat-value" id="val-viewers">0</span>
+  </div>
+
+  <div class="stat-row val-panel radianite">
+    <div class="stat-meta">
+      <span class="stat-code">// 02 · RECRUITS</span>
+      <span class="stat-label">Seguidores</span>
+    </div>
+    <span class="stat-value" id="val-followers">0</span>
+  </div>
+
+  <div class="stat-row val-panel gold">
+    <div class="stat-meta">
+      <span class="stat-code">// 03 · RADIANT AGENTS</span>
+      <span class="stat-label">Suscriptores</span>
+    </div>
+    <span class="stat-value" id="val-subs">0</span>
+  </div>
+</div>
+
+<!-- 2. Tiempo en Directo + Reporte Táctico (career-stats) -->
+<div id="right-panel" data-widget-id="career-stats">
+  <div id="uptime-block" class="val-panel">
+    <span class="uptime-label">// UPTIME</span>
+    <span class="uptime-value" id="val-uptime">00:00:00</span>
+  </div>
+
+  <div id="val-combat-report" class="val-panel">
+    <div class="combat-header">
+      <span class="combat-title">🎯 Combat Telemetry</span>
+      <span class="combat-badge">RADIANT</span>
+    </div>
+    <div class="combat-row"><span class="combat-key">Rango Actual</span><span class="combat-val red">RADIANT #142</span></div>
+    <div class="combat-row"><span class="combat-key">Puntuación Media (ACS)</span><span class="combat-val radianite">284.5</span></div>
+    <div class="combat-row"><span class="combat-key">Precisión Headshot</span><span class="combat-val gold">34.8%</span></div>
+    <div class="combat-row"><span class="combat-key">Ratio K/D</span><span class="combat-val">1.48</span></div>
+  </div>
+</div>
+
+<!-- 3. Chat Táctico (chat) -->
+<div id="val-chat" class="val-panel" data-widget-id="chat">
+  <div class="val-chat-header">
+    <span>// COMMS · SQUAD FEED</span>
+    <span class="val-chat-status">LIVE</span>
+  </div>
+  <div class="val-chat-messages" id="val-chat-msgs"></div>
+</div>
+
+<!-- 4. Último Seguidor (recent-follow) -->
+<div id="recent-follow" class="val-panel" data-widget-id="recent-follow">
+  <div class="rf-icon">V</div>
+  <div class="rf-content">
+    <div class="rf-label">// NEW AGENT RECRUITED</div>
+    <div class="rf-name" id="last-follow-name">Awaiting Agent…</div>
+  </div>
+</div>
+
+<!-- 5. Barra Inferior del Directo (info-bar) -->
+<div id="stream-title-bar" data-widget-id="info-bar">
+  <div id="live-badge">LIVE // ON AIR</div>
+  <div id="broadcaster-badge">@<span id="broadcaster-name">Agent</span></div>
+  <div id="game-label">VALORANT</div>
+  <div id="title-sep">//</div>
+  <div id="title-text">Initializing Tactical Protocol…</div>
+  <div id="spike-status">SPIKE // READY</div>
+</div>
+
+<!-- 6. Alertas Centrales (alerts) -->
+<div id="alert-zone" data-widget-id="alerts"></div>
+
+<script src="/overlays/js/socket.io.js"></script>
+<script>
+const params      = new URLSearchParams(location.search);
+const CHANNEL     = params.get('channel') || '';
+const DEMO_MODE   = params.get('demo') === 'true';
+const BACKEND_URL = params.get('backend') || 'http://localhost:3000';
+const WIDGET_ONLY = params.get('widget') || '';
+const HIDE_LAYERS = (params.get('hide') || '').split(',').map(s => s.trim()).filter(Boolean);
+const EDIT_MODE   = params.get('edit') === 'true' || params.get('interactive') === 'true';
+const POS_STORAGE_KEY = `sd_valorant_protocol_pos_${CHANNEL || 'default'}`;
+
+document.getElementById('broadcaster-name').textContent = CHANNEL || 'Radiant';
+
+(function setupModularView() {
+  if (WIDGET_ONLY) {
+    document.body.classList.add('widget-standalone');
+    document.body.setAttribute('data-active-widget', WIDGET_ONLY);
+    const target = document.querySelector(`[data-widget-id="${WIDGET_ONLY}"]`);
+    if (target) target.classList.add('widget-active');
+    return;
+  }
+  HIDE_LAYERS.forEach(layerId => {
+    const el = document.querySelector(`[data-widget-id="${layerId}"]`);
+    if (el) el.classList.add('widget-hidden');
+  });
+})();
+
+function loadSavedPositions() {
+  if (WIDGET_ONLY) return;
+  try {
+    const raw = localStorage.getItem(POS_STORAGE_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw);
+    Object.entries(map).forEach(([wid, pos]) => {
+      const el = document.querySelector(`[data-widget-id="${wid}"]`);
+      if (!el || !pos) return;
+      el.style.left = `${pos.left}px`;
+      el.style.top = `${pos.top}px`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      if (wid === 'alerts') el.style.transform = 'none';
+    });
+  } catch {}
+}
+
+function saveWidgetPosition(wid, left, top) {
+  try {
+    const raw = localStorage.getItem(POS_STORAGE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[wid] = { left: Math.round(left), top: Math.round(top) };
+    localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+function initEditMode() {
+  loadSavedPositions();
+  if (!EDIT_MODE || WIDGET_ONLY) return;
+  document.body.classList.add('edit-mode');
+
+  document.getElementById('btn-test-alert').addEventListener('click', () => {
+    enqueueAlert({
+      type: 'ACE // NEW RADIANT SUBSCRIBER',
+      user: 'Jett_Main_99',
+      detail: 'Tier 1 · Radianite Protocol Activated',
+      msg: '¡Qué clean está este overlay de Valorant!',
+    });
+  });
+
+  document.getElementById('btn-reset-pos').addEventListener('click', () => {
+    localStorage.removeItem(POS_STORAGE_KEY);
+    location.reload();
+  });
+
+  document.querySelectorAll('[data-widget-id]').forEach(el => {
+    let dragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
+    el.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      dragging = true;
+      el.classList.add('dragging');
+      el.setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      origLeft = rect.left;
+      origTop = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      el.style.left = `${origLeft}px`;
+      el.style.top = `${origTop}px`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      if (el.dataset.widgetId === 'alerts') el.style.transform = 'none';
+    });
+    el.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      el.style.left = `${origLeft + (e.clientX - startX)}px`;
+      el.style.top = `${origTop + (e.clientY - startY)}px`;
+    });
+    el.addEventListener('pointerup', () => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      const rect = el.getBoundingClientRect();
+      saveWidgetPosition(el.dataset.widgetId, rect.left, rect.top);
+    });
+  });
+}
+
+let uptimeSeconds = 0;
+function fmtTime(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [h, m, sec].map(v => String(v).padStart(2, '0')).join(':');
+}
+setInterval(() => {
+  if (uptimeSeconds > 0 || DEMO_MODE) {
+    uptimeSeconds++;
+    document.getElementById('val-uptime').textContent = fmtTime(uptimeSeconds);
+  }
+}, 1000);
+
+function addChatMessage(msg) {
+  const box = document.getElementById('val-chat-msgs');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (msg.superChat ? ' superchat' : '');
+
+  const plat = document.createElement('span');
+  plat.className = 'chat-plat ' + (msg.platform === 'youtube' ? 'yt' : 'tw');
+  plat.textContent = msg.platform === 'youtube' ? 'YT' : 'TW';
+  div.appendChild(plat);
+
+  if (msg.superChat && msg.superChat.formattedAmount) {
+    const sc = document.createElement('span');
+    sc.className = 'chat-sc-pill';
+    sc.textContent = '💸 ' + msg.superChat.formattedAmount;
+    div.appendChild(sc);
+  }
+
+  const user = document.createElement('span');
+  user.className = 'chat-user';
+  user.style.color = msg.user?.color || '#FF4655';
+  user.textContent = (msg.user?.displayName || 'Agent') + ':';
+  div.appendChild(user);
+
+  const text = document.createElement('span');
+  text.className = 'chat-text';
+  text.textContent = msg.text || '';
+  div.appendChild(text);
+
+  box.appendChild(div);
+  while (box.children.length > 7) box.removeChild(box.firstChild);
+}
+
+const alertQueue = [];
+let alertShowing = false;
+function enqueueAlert(a) {
+  alertQueue.push(a);
+  if (!alertShowing) showNextAlert();
+}
+function showNextAlert() {
+  if (!alertQueue.length) { alertShowing = false; return; }
+  alertShowing = true;
+  const a = alertQueue.shift();
+  const zone = document.getElementById('alert-zone');
+  const card = document.createElement('div');
+  card.className = 'alert-card';
+  card.innerHTML = `
+    <div class="alert-type">// ${a.type} //</div>
+    <div class="alert-user">${a.user}</div>
+    ${a.detail ? `<div class="alert-detail">${a.detail}</div>` : ''}
+    ${a.msg ? `<div class="alert-msg">${a.msg}</div>` : ''}
+  `;
+  zone.appendChild(card);
+  setTimeout(() => {
+    card.remove();
+    showNextAlert();
+  }, 5000);
+}
+
+function updateHud(data) {
+  if (!data) return;
+  document.getElementById('val-viewers').textContent = data.viewers ?? 0;
+  document.getElementById('val-followers').textContent = data.followers ?? 0;
+  document.getElementById('val-subs').textContent = data.subscribers ?? 0;
+  if (data.uptimeSeconds) uptimeSeconds = data.uptimeSeconds;
+  if (data.streamTitle) document.getElementById('title-text').textContent = data.streamTitle;
+  if (data.lastFollower) document.getElementById('last-follow-name').textContent = data.lastFollower;
+}
+
+if (DEMO_MODE) {
+  uptimeSeconds = 3910;
+  updateHud({
+    viewers: 2150,
+    followers: 64200,
+    subscribers: 1320,
+    streamTitle: '🎯 ROAD TO RADIANT #1 · Vandal Only & Scrims | !sens !crosshair !sorteo',
+    lastFollower: 'TenZ_Protocol',
+  });
+  const demoMsgs = [
+    { platform: 'twitch', user: { displayName: 'OmenShadow', color: '#00F5D4' }, text: '¡Ese clutch 1v4 en Ascent fue una locura!' },
+    { platform: 'youtube', user: { displayName: 'ViperToxic_YT', color: '#FF4655' }, text: 'Viendo el directo desde YouTube en 1080p60 🔥' },
+    { platform: 'youtube', user: { displayName: 'ChamberRich', color: '#F5C542' }, text: 'Para la nueva skin de Vandal Kuronami!', superChat: { formattedAmount: '50,00 €' } },
+    { platform: 'twitch', user: { displayName: 'ReynaEmpress', color: '#ECE8E1' }, text: '!crosshair !sorteo' },
+  ];
+  let idx = 0;
+  demoMsgs.forEach((m, i) => setTimeout(() => addChatMessage(m), i * 850));
+  setInterval(() => {
+    addChatMessage(demoMsgs[idx % demoMsgs.length]);
+    idx++;
+  }, 4200);
+  setTimeout(() => {
+    enqueueAlert({
+      type: 'ACE // NEW RADIANT MEMBER',
+      user: 'SovaRecon_YT',
+      detail: 'Radianite Tier 1 · Protocol Joined',
+      msg: '¡Directazo competitivo!',
+    });
+  }, 1400);
+} else if (typeof io !== 'undefined') {
+  const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
+  socket.on('connect', () => {
+    if (CHANNEL) socket.emit('join:channel', CHANNEL);
+  });
+  socket.on('hud:update', updateHud);
+  socket.on('chat:message', addChatMessage);
+  socket.on('channel:follow', d => {
+    document.getElementById('last-follow-name').textContent = d.userDisplayName || 'Agent';
+    enqueueAlert({ type: 'NEW AGENT RECRUITED', user: d.userDisplayName || 'Agent', detail: 'Joined the VALORANT Protocol' });
+  });
+  socket.on('channel:subscribe', d => {
+    enqueueAlert({ type: 'RADIANT AGENT SUBSCRIBED', user: d.userDisplayName || 'Agent', detail: `Tier ${d.tier || '1'}` });
+  });
+  socket.on('channel:subscription-message', d => {
+    enqueueAlert({ type: 'VETERAN RADIANT AGENT', user: d.userDisplayName || 'Agent', detail: `${d.cumulativeMonths || 1} Months Active`, msg: d.message });
+  });
+  socket.on('channel:subgift', d => {
+    enqueueAlert({ type: 'RADIANITE DROP // SUBGIFT', user: d.gifterDisplayName || 'Agent', detail: `Gifted ${d.total || 1} memberships` });
+  });
+  socket.on('channel:cheer', d => {
+    enqueueAlert({
+      type: d.platform === 'youtube' ? 'SUPER CHAT // RADIANITE BOOST' : 'CHEER // RADIANITE CREDITS',
+      user: d.userDisplayName || 'Agent',
+      detail: d.formattedAmount || `${d.bits || 100} Bits`,
+      msg: d.message,
+    });
+  });
+  socket.on('channel:raid', d => {
+    enqueueAlert({ type: 'INCOMING STRIKE TEAM // RAID', user: d.fromDisplayName || 'Squad', detail: `${d.viewers || 1} Agents Deployed` });
+  });
+}
+
+/* Partículas angulares de Radianita */
+(function initParticles() {
+  if (WIDGET_ONLY) return;
+  const canvas = document.getElementById('particles');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 1920;
+  canvas.height = 1080;
+  const shards = Array.from({ length: 26 }, () => ({
+    x: Math.random() * 1920,
+    y: Math.random() * 1080,
+    s: Math.random() * 4 + 2,
+    vy: -(Math.random() * 0.5 + 0.2),
+    crimson: Math.random() > 0.4,
+    alpha: Math.random() * 0.45 + 0.15,
+  }));
+  function tick() {
+    ctx.clearRect(0, 0, 1920, 1080);
+    for (const sh of shards) {
+      sh.y += sh.vy;
+      if (sh.y < -10) { sh.y = 1090; sh.x = Math.random() * 1920; }
+      ctx.save();
+      ctx.translate(sh.x, sh.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = sh.crimson ? `rgba(255, 70, 85, ${sh.alpha})` : `rgba(0, 245, 212, ${sh.alpha})`;
+      ctx.fillRect(-sh.s / 2, -sh.s / 2, sh.s, sh.s);
+      ctx.restore();
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
+initEditMode();
+</script>
+</body>
+</html>
+

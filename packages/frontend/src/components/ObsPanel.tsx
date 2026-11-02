@@ -111,9 +111,11 @@ interface ThemeDescriptor {
 }
 
 const THEMES: ThemeDescriptor[] = [
-  { id: '',           labelKey: 'obs.sinTema',        color: '#8b5cf6', tag: 'Core & Widgets' },
-  { id: 'cyberpunk',  labelKey: 'obs.temaCyberpunk',  color: '#ff003c', tag: 'Neon Glitch' },
-  { id: 'fortnite',   labelKey: 'obs.temaFortnite',   color: '#00d4ff', tag: 'Battle Royale' },
+  { id: '',            labelKey: 'obs.sinTema',        color: '#8b5cf6', tag: 'Core & Widgets' },
+  { id: 'wow-forever', labelKey: 'obs.temaWowForever', color: '#f5c542', tag: 'Azeroth Eterno' },
+  { id: 'valorant',    labelKey: 'obs.temaValorant',   color: '#ff4655', tag: 'Radiant Protocol' },
+  { id: 'cyberpunk',   labelKey: 'obs.temaCyberpunk',  color: '#ff003c', tag: 'Neon Glitch' },
+  { id: 'fortnite',    labelKey: 'obs.temaFortnite',   color: '#00d4ff', tag: 'Battle Royale' },
   { id: 'extraction', labelKey: 'obs.temaExtraction', color: '#ff6b00', tag: 'Raid & Comms' },
   { id: 'dj',         labelKey: 'obs.temaDJ',         color: '#00f0ff', tag: 'Vinyl & EQ' },
   { id: 'retrowave',  labelKey: 'obs.temaRetrowave',  color: '#ff00ff', tag: 'Synth Sunset' },
@@ -150,6 +152,24 @@ function cleanLabel(text: string): string {
 /** Large bespoke SVG emblem for each Visual Theme in obs.temaVisual */
 function ThemeArtwork({ themeId }: { themeId: string }) {
   switch (themeId) {
+    case 'wow-forever':
+      return (
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polygon points="14 2.5 23.5 8 23.5 20 14 25.5 4.5 20 4.5 8" fill="currentColor" fillOpacity="0.16" />
+          <path d="M14 5.5v17M9.5 10l4.5-3 4.5 3M9.5 18l4.5 3 4.5-3" />
+          <circle cx="14" cy="14" r="2.6" fill="currentColor" />
+        </svg>
+      );
+    case 'valorant':
+      return (
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polygon points="4 6 12.5 22 16 22 7.5 6" fill="currentColor" fillOpacity="0.28" />
+          <polygon points="24 6 18 17.5 14.5 17.5 20.5 6" fill="currentColor" fillOpacity="0.15" />
+          <line x1="14" y1="2.5" x2="14" y2="5.5" />
+          <line x1="2.5" y1="14" x2="5.5" y2="14" />
+          <line x1="22.5" y1="14" x2="25.5" y2="14" />
+        </svg>
+      );
     case 'dj':
       return (
         <svg width="26" height="26" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -371,6 +391,8 @@ function matchThemeItem(item: OverlayEntry, themeId: string): boolean {
   return Boolean(cat && cat.themeId === themeId);
 }
 
+const MODULAR_OVERLAY_IDS = new Set(['fortnite', 'fortnite-hud-api', 'wow-forever', 'valorant-protocol']);
+
 export function ObsPanel({ channel }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -393,6 +415,8 @@ export function ObsPanel({ channel }: Props) {
   const [fnExpandedMap, setFnExpandedMap] = useState<Record<string, boolean>>({
     fortnite: true,
     'fortnite-hud-api': true,
+    'wow-forever': true,
+    'valorant-protocol': true,
   });
   const [fnHiddenLayersMap, setFnHiddenLayersMap] = useState<Record<string, string[]>>({});
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
@@ -463,7 +487,7 @@ export function ObsPanel({ channel }: Props) {
       url += `?channel=${channel}`;
       url += `&backend=${encodeURIComponent(be)}`;
       if ((ov.mode === 'fortnite' || ov.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
-      if ((ov.id === 'fortnite' || ov.id === 'fortnite-hud-api') && hiddenForOv.length > 0) url += `&hide=${encodeURIComponent(hiddenForOv.join(','))}`;
+      if (MODULAR_OVERLAY_IDS.has(ov.id) && hiddenForOv.length > 0) url += `&hide=${encodeURIComponent(hiddenForOv.join(','))}`;
       if (ov.mode.endsWith('-end') && socialsParam) url += `&socials=${socialsParam}`;
       return url;
     }
@@ -487,7 +511,13 @@ export function ObsPanel({ channel }: Props) {
   const applyFnModuleToObs = useCallback(async (ov: OverlayEntry, mod: FnCartoonModuleDescriptor) => {
     const filename = ov.filename || 'fortnite_horizontal_hud_api.html';
     const applyKey = `fn-mod-${ov.id}-${mod.widgetId}`;
-    const prefix = ov.id === 'fortnite' ? 'FN Overlay' : 'FN Cartoon';
+    const prefixMap: Record<string, string> = {
+      fortnite: 'FN Overlay',
+      'fortnite-hud-api': 'FN Cartoon',
+      'wow-forever': 'WoW Forever',
+      'valorant-protocol': 'VALORANT',
+    };
+    const prefix = prefixMap[ov.id] || 'Overlay';
     const sourceName = `${prefix} · ${cleanLabel(t(mod.labelKey))}`;
     setObsApplyingId(applyKey);
     try {
@@ -586,7 +616,7 @@ export function ObsPanel({ channel }: Props) {
       let url = `${overlayBaseUrl}/overlays/${standalone}`;
       if (channel) url += `?channel=${channel}`;
       if ((item.mode === 'fortnite' || item.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
-      if ((item.id === 'fortnite' || item.id === 'fortnite-hud-api') && hiddenForItem.length > 0) url += `&hide=${encodeURIComponent(hiddenForItem.join(','))}`;
+      if (MODULAR_OVERLAY_IDS.has(item.id) && hiddenForItem.length > 0) url += `&hide=${encodeURIComponent(hiddenForItem.join(','))}`;
       const be = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
       url += `${channel ? '&' : '?'}backend=${encodeURIComponent(be)}`;
       if (item.mode.endsWith('-end')) {
@@ -640,7 +670,7 @@ export function ObsPanel({ channel }: Props) {
 
   function renderOverlayCard(item: OverlayEntry) {
     const isSocial = item.id === 'social';
-    const isFnModular = item.id === 'fortnite' || item.id === 'fortnite-hud-api';
+    const isFnModular = MODULAR_OVERLAY_IDS.has(item.id);
     const isFnExpanded = Boolean(fnExpandedMap[item.id]);
     const hiddenLayersForItem = fnHiddenLayersMap[item.id] ?? [];
     const url = isSocial ? buildSocialUrl() : buildUrl(item);
