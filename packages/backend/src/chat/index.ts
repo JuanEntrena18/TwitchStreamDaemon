@@ -124,7 +124,11 @@ export async function setupChat() {
   });
 
   logger.info('Chat client connecting...');
-  await chatClient.connect();
+  try {
+    chatClient.connect();
+  } catch (err: unknown) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Chat client initial connection failed (will retry in background)');
+  }
 
   chatClient.onMessage((channel, user, text, msg) => {
     const channelName = channel.replace('#', '');

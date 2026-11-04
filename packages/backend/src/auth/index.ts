@@ -218,7 +218,10 @@ export async function setupAuth(app: FastifyInstance) {
     });
   });
 
-  await restoreSession();
+  // Restore session in background so external Twitch network calls never block app startup
+  restoreSession().catch((err) => {
+    logger.warn({ err: err instanceof Error ? err.message : err }, 'Background session restore warning (non-fatal)');
+  });
 
   // ── Device Code Grant (Electron / desktop, no redirect) ──
 

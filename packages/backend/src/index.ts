@@ -115,7 +115,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
   setupGiveaways(app);
   setEnterGiveaway(enterGiveaway);
   setAddTickets(addTickets);
-  await setupChat();
+  setupChat().catch((err) => logger.warn({ err }, 'Twitch chat initial connect warning'));
   setupChatGreeting(app);
   setupPiper(app);
   setupEventSub();
@@ -151,15 +151,44 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
 
   app.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
 
-  const listenPort = opts?.port ?? parseInt(config.PORT, 10);
-  try {
-    await app.listen({ port: listenPort, host: '::' });
-  } catch {
-    await app.listen({ port: listenPort, host: '0.0.0.0' });
+  const initialPort = opts?.port ?? parseInt(config.PORT, 10);
+  const tryPorts = [initialPort, initialPort + 1, initialPort + 2];
+  let boundPort = initialPort;
+  let listening = false;
+  for (const p of tryPorts) {
+    try {
+      await app.listen({ port: p, host: '::' });
+      boundPort = p;
+      listening = true;
+      break;
+    } catch (err: unknown) {
+      const isAddrInUse = err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'EADDRINUSE';
+      if (isAddrInUse) {
+        logger.warn({ port: p }, 'Port already in use, trying next port...');
+        continue;
+      }
+      try {
+        await app.listen({ port: p, host: '0.0.0.0' });
+        boundPort = p;
+        listening = true;
+        break;
+      } catch (err2: unknown) {
+        const isAddrInUse2 = err2 && typeof err2 === 'object' && 'code' in err2 && (err2 as { code: string }).code === 'EADDRINUSE';
+        if (isAddrInUse2) {
+          logger.warn({ port: p }, 'Port already in use, trying next port...');
+          continue;
+        }
+        throw err2;
+      }
+    }
   }
-  logger.info({ port: listenPort }, 'Server running');
 
-  return app;
+  if (!listening) {
+    throw new Error(`Could not bind to any port in range [${tryPorts.join(', ')}]`);
+  }
+  logger.info({ port: boundPort }, 'Server running');
+
+  return { app, port: boundPort };
 }
 
 // Auto-start when run directly (not imported)

@@ -25,6 +25,20 @@ if (!isDev && !process.env.NODE_ENV) process.env.NODE_ENV = 'production';
 
 redirectConsoleToLogger();
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  logger.info('Duplicate StreamDaemon instance detected. Quitting.');
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
 // ── Remove default menu (File / Edit / View…) ─────────────
 Menu.setApplicationMenu(null);
 
@@ -125,15 +139,17 @@ let overlayIgnoreMouse = true;
 let overlayFrameless = true;
 let mainAlwaysOnTop = false;
 let backendReady = false;
+let backendPort = 3000;
 
 // ── Backend ───────────────────────────────────────────────
 async function startBackend(retries = 3, delayMs = 600) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const { startServer } = await import('@streamdaemon/backend/dist/index.js');
-      await startServer({ port: 3000, frontendDir: getFrontendDistDir() });
+      const result = await startServer({ port: 3000, frontendDir: getFrontendDistDir() });
+      backendPort = (result && typeof result === 'object' && 'port' in result) ? (result as { port: number }).port : 3000;
       backendReady = true;
-      logger.info('Backend started — serving frontend at http://127.0.0.1:3000');
+      logger.info(`Backend started — serving frontend at http://127.0.0.1:${backendPort}`);
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -151,7 +167,9 @@ async function startBackend(retries = 3, delayMs = 600) {
 }
 
 // ── Vibe Daemon hotkeys ───────────────────────────────────
-const BACKEND_ORIGIN = isDev ? 'http://localhost:3000' : 'http://127.0.0.1:3000';
+function getBackendOrigin(): string {
+  return isDev ? 'http://localhost:3000' : `http://127.0.0.1:${backendPort}`;
+}
 let vibeHotkeySignature = '';
 const vibeHotkeyAccelerators: string[] = [];
 
@@ -164,12 +182,12 @@ async function setupVibeDaemonHotkeys() {
   if (!backendReady) return;
   try {
     const headers = { 'x-local-token': LOCAL_API_TOKEN };
-    const statusRes = await fetch(`${BACKEND_ORIGIN}/auth/status`, { headers });
+    const statusRes = await fetch(`${getBackendOrigin()}/auth/status`, { headers });
     if (!statusRes.ok) return;
     const status = (await statusRes.json()) as { authenticated: boolean; user?: { login?: string } };
     if (!status.authenticated || !status.user?.login) return;
 
-    const configRes = await fetch(`${BACKEND_ORIGIN}/vibe-daemon/config`, { headers });
+    const configRes = await fetch(`${getBackendOrigin()}/vibe-daemon/config`, { headers });
     if (!configRes.ok) return;
     const cfg = (await configRes.json()) as VibeDaemonDesktopConfig;
     if (!cfg.enabled) return;
@@ -187,7 +205,7 @@ async function setupVibeDaemonHotkeys() {
     for (const [eventType, accelerator] of entries) {
       if (!accelerator) continue;
       const registered = globalShortcut.register(accelerator, () => {
-        fetch(`${BACKEND_ORIGIN}/vibe-daemon/event`, {
+        fetch(`${getBackendOrigin()}/vibe-daemon/event`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-local-token': LOCAL_API_TOKEN },
           body: JSON.stringify({ channel, gameId: 'global', eventType, timestamp: Date.now() }),
@@ -230,8 +248,8 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
-    if (!allowed.some((prefix) => url.startsWith(prefix))) {
+    const isAllowed = url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+    if (!isAllowed) {
       event.preventDefault();
     }
   });
@@ -247,19 +265,19 @@ function createMainWindow() {
   });
 }
 
-function loadMainAppUrl(attempts = 8): void {
+function loadMainAppUrl(port = backendPort, attempts = 8): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const mainUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
+  const mainUrl = isDev ? 'http://localhost:5173' : `http://127.0.0.1:${port}`;
   mainWindow.loadURL(mainUrl).catch(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.loadURL('http://127.0.0.1:3000').catch(() => {
+    mainWindow.loadURL(`http://localhost:${port}`).catch(() => {
       if (attempts <= 1) {
         console.warn('⚠️  loadURL failed, falling back to loadFile');
         mainWindow?.loadFile(getFrontendPath('index.html')).catch(() => {});
         return;
       }
-      console.warn(`⚠️  loadURL failed, retrying in 1000ms… (${attempts - 1} left)`);
-      setTimeout(() => loadMainAppUrl(attempts - 1), 1000);
+      console.warn(`⚠️  loadURL failed, retrying in 500ms… (${attempts - 1} left)`);
+      setTimeout(() => loadMainAppUrl(port, attempts - 1), 500);
     });
   });
 }
@@ -269,7 +287,7 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
   if (overlayWindow) overlayWindow.close();
   if (overlaySettingsWindow) { overlaySettingsWindow.close(); overlaySettingsWindow = null; }
 
-  const overlayBaseUrl = isDev ? 'http://localhost:5173' : 'http://127.0.0.1:3000';
+  const overlayBaseUrl = isDev ? 'http://localhost:5173' : `http://127.0.0.1:${backendPort}`;
   const overlayUrl = isUrl
     ? urlOrChannel
     : `${overlayBaseUrl}/overlay.html?mode=chat&channel=${encodeURIComponent(urlOrChannel)}${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
@@ -319,8 +337,8 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
   });
 
   overlayWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
-    if (!allowed.some((prefix) => url.startsWith(prefix))) {
+    const isAllowed = url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+    if (!isAllowed) {
       event.preventDefault();
     }
   });
@@ -392,7 +410,7 @@ function openOverlaySettingsWindow() {
     overlaySettingsWindow.focus();
     return;
   }
-  const overlayBaseUrl = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
+  const overlayBaseUrl = isDev ? 'http://localhost:5173' : `http://127.0.0.1:${backendPort}`;
   overlaySettingsWindow = new BrowserWindow({
     width: 360,
     height: 500,
@@ -421,10 +439,8 @@ function toggleClickThrough() {
 
 // ── IPC ───────────────────────────────────────────────────
 
-const TRUSTED_OVERLAY_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
-
 ipcMain.on('overlay:open', (_e, url: string, isUrl: boolean, theme?: string) => {
-  if (isUrl && (url.startsWith('http://localhost') || url.startsWith('file://')) && !TRUSTED_OVERLAY_ORIGINS.some(t => url.startsWith(t))) {
+  if (isUrl && !url.startsWith('http://localhost:') && !url.startsWith('http://127.0.0.1:') && !url.startsWith('file://')) {
     console.warn('[security] Blocked untrusted overlay URL:', url);
     return;
   }
@@ -575,10 +591,10 @@ app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     {
       urls: [
-        'http://localhost:3000/*',
-        'http://127.0.0.1:3000/*',
-        'ws://localhost:3000/*',
-        'ws://127.0.0.1:3000/*',
+        'http://localhost:*/*',
+        'http://127.0.0.1:*/*',
+        'ws://localhost:*/*',
+        'ws://127.0.0.1:*/*',
       ],
     },
     (details, callback) => {
@@ -591,18 +607,28 @@ function getInitialLoadingHtml(): string {
   const locale = (app.getLocale() || '').toLowerCase();
   let statusText = 'Initializing local broadcast engine & AES-256 vault…';
   let taglineText = 'Local-first broadcast suite, multistream chat & modular overlays.';
+  let fallbackBtn = 'Abrir StreamDaemon Studio';
+  let fallbackNote = 'Haz clic para entrar si la pantalla no cambia automáticamente.';
   if (locale.startsWith('es')) {
     statusText = 'Inicializando motor local StreamDaemon y bóveda AES-256…';
     taglineText = 'Plataforma local-first de producción en directo, chat multistream y overlays modulares.';
+    fallbackBtn = 'Entrar a StreamDaemon Studio';
+    fallbackNote = 'Haz clic para acceder manualmente si el inicio automático se retrasa.';
   } else if (locale.startsWith('fr')) {
     statusText = 'Initialisation du moteur local StreamDaemon…';
     taglineText = 'Suite locale de diffusion en direct, chat multistream et overlays modulaires.';
+    fallbackBtn = 'Ouvrir StreamDaemon Studio';
+    fallbackNote = 'Cliquez pour entrer si le démarrage automatique tarde.';
   } else if (locale.startsWith('de')) {
     statusText = 'Lokale StreamDaemon-Engine wird initialisiert…';
     taglineText = 'Local-First-Streaming-Suite, Multistream-Chat & modulare Overlays.';
+    fallbackBtn = 'StreamDaemon Studio öffnen';
+    fallbackNote = 'Klicken Sie zum manuellen Öffnen, falls der Start verzögert ist.';
   } else if (locale.startsWith('it')) {
     statusText = 'Inizializzazione del motore locale StreamDaemon…';
     taglineText = 'Suite locale di regia live, chat multistream e overlay modulari.';
+    fallbackBtn = 'Apri StreamDaemon Studio';
+    fallbackNote = 'Clicca per accedere manualmente se l\'avvio automatico ritarda.';
   }
 
   const html = `<!doctype html>
@@ -754,8 +780,40 @@ function getInitialLoadingHtml(): string {
       background: linear-gradient(90deg, #7c3aed 0%, #a855f7 55%, #22d3ee 100%);
       box-shadow: 0 0 14px rgba(168, 85, 247, 0.65);
       animation: boot-bar 2.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transition: width 0.3s ease;
     }
-    @keyframes boot-bar { 0% { width: 12%; } 60% { width: 78%; } 100% { width: 95%; } }
+    @keyframes boot-bar { 0% { width: 15%; } 50% { width: 65%; } 90% { width: 88%; } 100% { width: 94%; } }
+    .fallback-container {
+      display: none;
+      width: 100%;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.45rem;
+      margin-top: 0.3rem;
+      animation: fadeIn 0.4s ease forwards;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .fallback-btn {
+      cursor: pointer;
+      background: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #06b6d4 100%);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 0.8rem;
+      padding: 0.65rem 1.6rem;
+      border-radius: 999px;
+      box-shadow: 0 0 20px rgba(124, 58, 237, 0.5);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .fallback-btn:hover {
+      transform: scale(1.02);
+      box-shadow: 0 0 26px rgba(124, 58, 237, 0.7);
+    }
+    .fallback-note {
+      font-size: 0.68rem;
+      color: rgba(203, 213, 225, 0.6);
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -766,7 +824,7 @@ function getInitialLoadingHtml(): string {
     <div class="top-bar"></div>
     <div class="header-row">
       <span class="eyebrow">CYBER HAUTE COUTURE · BROADCAST SUITE</span>
-      <span class="ver">v0.7.0</span>
+      <span class="ver">v${APP_VERSION || '0.7.1'}</span>
     </div>
     <div class="stage">
       <div class="orb-glow"></div>
@@ -816,11 +874,69 @@ function getInitialLoadingHtml(): string {
     </div>
     <div class="progress-box">
       <div class="status-row">
-        <div class="status-left"><span class="pulse"></span><span>${statusText}</span></div>
+        <div class="status-left"><span class="pulse"></span><span id="boot-status">${statusText}</span></div>
       </div>
-      <div class="track"><div class="fill"></div></div>
+      <div class="track"><div class="fill" id="boot-bar"></div></div>
+    </div>
+    <div class="fallback-container" id="fallback-ui">
+      <button class="fallback-btn" onclick="forceOpen()">${fallbackBtn}</button>
+      <span class="fallback-note">${fallbackNote}</span>
     </div>
   </main>
+  <script>
+    let boundPort = 3000;
+    let navigating = false;
+
+    function proceedToApp(port) {
+      if (navigating) return;
+      navigating = true;
+      const bar = document.getElementById('boot-bar');
+      if (bar) {
+        bar.style.animation = 'none';
+        bar.style.width = '100%';
+      }
+      const st = document.getElementById('boot-status');
+      if (st) st.textContent = '¡Listo! Abriendo estudio...';
+      setTimeout(() => {
+        window.location.replace('http://127.0.0.1:' + (port || boundPort));
+      }, 100);
+    }
+
+    function forceOpen() {
+      proceedToApp(boundPort);
+    }
+
+    window.__onBackendReady = function(port) {
+      if (port) boundPort = port;
+      proceedToApp(boundPort);
+    };
+
+    // Heartbeat prober for ports 3000, 3001, 3002
+    const ports = [3000, 3001, 3002];
+    let probeCount = 0;
+    const probeTimer = setInterval(async () => {
+      probeCount++;
+      for (const p of ports) {
+        try {
+          const resp = await fetch('http://127.0.0.1:' + p + '/health', { cache: 'no-store' });
+          if (resp.ok) {
+            clearInterval(probeTimer);
+            boundPort = p;
+            proceedToApp(p);
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // If after 4.5 seconds (15 ticks * 300ms) not redirected, show fallback button
+      if (probeCount >= 15) {
+        const fb = document.getElementById('fallback-ui');
+        if (fb) fb.style.display = 'flex';
+        const st = document.getElementById('boot-status');
+        if (st && !navigating) st.textContent = 'Comprobando respuesta del motor local...';
+      }
+    }, 300);
+  </script>
 </body>
 </html>`;
   return `data:text/html;base64,${Buffer.from(html, 'utf-8').toString('base64')}`;
@@ -834,8 +950,9 @@ function getInitialLoadingHtml(): string {
   }
 
   await startBackend();
-  if (backendReady && mainWindow) {
-    loadMainAppUrl();
+  if (backendReady && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(`if (typeof window.__onBackendReady === 'function') window.__onBackendReady(${backendPort});`).catch(() => {});
+    loadMainAppUrl(backendPort);
   }
 
   setupVibeDaemonHotkeys();

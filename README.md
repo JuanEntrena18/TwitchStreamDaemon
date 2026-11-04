@@ -6,7 +6,7 @@
 
 ### Production-Grade, Local-First Broadcast Suite for Twitch & YouTube Live Creators
 
-[![Version](https://img.shields.io/badge/Version-0.7.0-7c3aed?style=flat-square)](https://github.com/JuanEntrena18/StreamDaemon/releases)
+[![Version](https://img.shields.io/badge/Version-0.7.1-7c3aed?style=flat-square)](https://github.com/JuanEntrena18/StreamDaemon/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-2563eb?style=flat-square)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows_10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/JuanEntrena18/StreamDaemon/releases)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
@@ -151,7 +151,7 @@ Version **0.7.0** introduces full **YouTube Live & Simultaneous Multistream inte
 
 No coding or terminal setup required:
 
-1. Download the latest Windows installer (`StreamDaemon-Setup-0.7.0.exe`) from [**GitHub Releases**](https://github.com/JuanEntrena18/StreamDaemon/releases).
+1. Download the latest Windows installer (`StreamDaemon-Setup-0.7.1.exe`) from [**GitHub Releases**](https://github.com/JuanEntrena18/StreamDaemon/releases).
 2. Run the installer and launch **StreamDaemon**.
 3. In the initial **Setup Wizard**, connect your **Twitch** account (via Device Code), your **YouTube Live** channel (via Quick API Key + `@handle` or Google OAuth 2.0), or **both** for simultaneous multistreaming.
 
