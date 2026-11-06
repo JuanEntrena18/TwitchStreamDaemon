@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from '../i18n/context';
 import { useSocketEvent } from './useSocket';
-import { apiGet, apiPost, apiPut, BACKEND_URL } from '../utils/api';
+import { apiGet, apiPost, apiPut } from '../utils/api';
 
 export interface AuthUser {
   id: string;
+  twitchId: string;
   login: string;
   displayName: string;
   profileImageUrl?: string;
@@ -56,7 +57,7 @@ export function useAuthStatus() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/auth/status`);
+      const res = await apiGet('/auth/status');
       if (res.ok) {
         const data: AuthStatus = await res.json();
         setStatus(data);
@@ -98,30 +99,31 @@ export function useAuthStatus() {
 
   const startDeviceLogin = useCallback(async () => {
     setDeviceState({ status: 'loading' });
-    try {
-      let res: Response;
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        res = await fetch(`${BACKEND_URL}/auth/device`, { method: 'POST' });
-      } catch {
-        // Fallback: try relative path if BACKEND_URL had origin/DNS mismatch
-        res = await fetch('/auth/device', { method: 'POST' });
-      }
+        const res = await apiPost('/auth/device');
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setDeviceState({ status: 'idle', error: err.error || t('auth.errorLogin') });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setDeviceState({ status: 'idle', error: err.error || t('auth.errorLogin') });
+          return;
+        }
+        const data = await res.json();
+        setDeviceState({
+          status: 'polling',
+          userCode: data.user_code,
+          verificationUri: data.verification_uri,
+          deviceCode: data.device_code,
+          interval: data.interval,
+        });
         return;
+      } catch {
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          continue;
+        }
+        setDeviceState({ status: 'idle', error: t('auth.errorNetwork') });
       }
-      const data = await res.json();
-      setDeviceState({
-        status: 'polling',
-        userCode: data.user_code,
-        verificationUri: data.verification_uri,
-        deviceCode: data.device_code,
-        interval: data.interval,
-      });
-    } catch {
-      setDeviceState({ status: 'idle', error: t('auth.errorNetwork') });
     }
   }, [t]);
 
@@ -129,49 +131,53 @@ export function useAuthStatus() {
     if (deviceState.status !== 'polling' || !deviceState.deviceCode) return;
 
     let cancelled = false;
-    const intervalMs = (deviceState.interval || 5) * 1000;
+    const intervalMs = Math.max(2000, (deviceState.interval || 5) * 1000);
 
     const poll = async () => {
       if (cancelled) return;
       try {
-        let res: Response;
-        try {
-          res = await fetch(`${BACKEND_URL}/auth/device/poll`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_code: deviceState.deviceCode }),
-          });
-        } catch {
-          res = await fetch('/auth/device/poll', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_code: deviceState.deviceCode }),
-          });
-        }
+        const res = await apiPost('/auth/device/poll', { device_code: deviceState.deviceCode });
 
         if (cancelled) return;
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (data.status === 'authenticated') {
           setDeviceState({ status: 'idle' });
-          refresh();
+          await refresh();
           return;
         }
+
+        // If Twitch explicitly expired the token or user denied
         if (data.error === 'expired_token' || data.error === 'access_denied') {
           setDeviceState({
             status: 'idle',
-            error: data.error === 'expired_token' ? t('auth.errorExpired') : t('auth.errorDenied'),
+            error: data.error === 'expired_token'
+              ? t('auth.errorExpired')
+              : t('auth.errorDenied'),
           });
           return;
         }
+
+        // If backend returned an error status, check if user got authenticated anyway
+        if (data.status === 'error') {
+          const checkRes = await apiGet('/auth/status');
+          if (checkRes.ok) {
+            const checkData = await checkRes.json().catch(() => ({}));
+            if (checkData.twitchAuthenticated) {
+              setStatus(checkData);
+              setDeviceState({ status: 'idle' });
+              return;
+            }
+          }
+        }
       } catch {
-        // Network error — keep polling
+        // Network error during poll — keep polling
       }
       if (!cancelled) {
         timeoutRef.current = setTimeout(poll, intervalMs);
       }
     };
 
-    timeoutRef.current = setTimeout(poll, 100);
+    timeoutRef.current = setTimeout(poll, 1500);
     return () => {
       cancelled = true;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -188,7 +194,7 @@ export function useAuthStatus() {
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${BACKEND_URL}/auth/logout`, { method: 'POST' });
+      await apiPost('/auth/logout');
     } catch { /* ignore */ }
     await refresh();
   }, [refresh]);

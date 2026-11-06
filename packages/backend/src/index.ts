@@ -46,8 +46,21 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
   redirectConsoleToLogger();
   const app = Fastify({ loggerInstance: logger as FastifyBaseLogger });
 
-  const allowedOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'];
-  await app.register(cors, { origin: allowedOrigins, credentials: false, methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] });
+  const isAllowedLocalOrigin = (origin?: string) => {
+    if (!origin) return true;
+    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  };
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      if (!origin || isAllowedLocalOrigin(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Not allowed by CORS'), false);
+      }
+    },
+    credentials: false,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   await app.register(fastifyMultipart, {
     limits: {
       fileSize: 20 * 1024 * 1024, // 20MB
@@ -64,7 +77,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('Content-Security-Policy',
       "default-src 'self'; " +
-      "connect-src 'self' https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv https://www.googleapis.com https://oauth2.googleapis.com https://raider.io ws://localhost:3000 ws://127.0.0.1:3000; " +
+      "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv https://www.googleapis.com https://oauth2.googleapis.com https://raider.io; " +
       "frame-src 'self' https://player.twitch.tv https://www.youtube.com; " +
       "img-src 'self' https://static-cdn.jtvnw.net https://howlongtobeat.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data: blob:; " +
       "media-src 'self' blob:; " +
@@ -97,11 +110,12 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
     });
   }
 
-  // Protect all state-changing endpoints except auth routes and health check
+  // Protect all state-changing endpoints except public auth/health routes
   app.addHook('onRequest', async (req, reply) => {
     const publicPrefixes = ['/auth/', '/health', '/overlays/', '/socket.io/', '/hud/start-poll'];
-    const isPublic = publicPrefixes.some((p) => req.url.startsWith(p));
-    if (isPublic) return;
+    const isPublicPrefix = publicPrefixes.some((p) => req.url.startsWith(p));
+    // Logout and other destructive auth actions must still be authenticated locally
+    if (isPublicPrefix && !['/auth/logout'].some((p) => req.url === p)) return;
 
     const protectedMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
     if (protectedMethods.includes(req.method)) {

@@ -591,10 +591,10 @@ app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     {
       urls: [
-        'http://localhost:*/*',
-        'http://127.0.0.1:*/*',
-        'ws://localhost:*/*',
-        'ws://127.0.0.1:*/*',
+        'http://localhost/*',
+        'http://127.0.0.1/*',
+        'ws://localhost/*',
+        'ws://127.0.0.1/*',
       ],
     },
     (details, callback) => {
@@ -951,7 +951,6 @@ function getInitialLoadingHtml(): string {
 
   await startBackend();
   if (backendReady && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.executeJavaScript(`if (typeof window.__onBackendReady === 'function') window.__onBackendReady(${backendPort});`).catch(() => {});
     loadMainAppUrl(backendPort);
   }
 

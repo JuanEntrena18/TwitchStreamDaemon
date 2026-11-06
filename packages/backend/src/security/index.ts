@@ -243,7 +243,7 @@ async function executeBan(userId: string, userName: string, type: 'follow-bot' |
   if (!authProvider || !currentUser) return;
   try {
     const api = new ApiClient({ authProvider });
-    await api.moderation.banUser(currentUser.id, {
+    await api.moderation.banUser(currentUser.twitchId, {
       user: userId,
       reason: `[Anti-Bots] ${reason}`,
     });
@@ -303,7 +303,7 @@ async function scanFollowers(username: string): Promise<{ found: number; banned:
         found++;
         if (config.autoBan) {
           try {
-            await api.moderation.banUser(currentUser.id, {
+            await api.moderation.banUser(currentUser.twitchId, {
               user: f.userId,
               reason: `[Anti-Bots] Escaneo manual: ${isKnown ? 'bot conocido' : 'patrón sospechoso'}`,
             });
@@ -447,7 +447,7 @@ export function setupSecurity(app: FastifyInstance) {
       const userData = await api.users.getUserByName(user);
       if (!userData) return reply.status(404).send({ error: 'User not found' });
 
-      await api.moderation.banUser(currentUser.id, {
+      await api.moderation.banUser(currentUser.twitchId, {
         user: userData.id,
         reason: '[Anti-Bots] Ban manual desde panel',
       });
@@ -491,7 +491,7 @@ export function setupSecurity(app: FastifyInstance) {
       const userData = await api.users.getUserByName(user);
       if (!userData) return reply.status(404).send({ error: 'User not found' });
 
-      await api.moderation.unbanUser(currentUser.id, userData.id);
+      await api.moderation.unbanUser(currentUser.twitchId, userData.id);
       return { ok: true };
     } catch {
       return reply.status(500).send({ error: 'Unban failed' });

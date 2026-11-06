@@ -323,8 +323,8 @@ function TtsUserSync() {
   const { user } = useAuthStatus();
   const { setCurrentUserId } = useTts();
   useEffect(() => {
-    setCurrentUserId(user?.id ?? null);
-  }, [user?.id, setCurrentUserId]);
+    setCurrentUserId(user?.twitchId ?? null);
+  }, [user?.twitchId, setCurrentUserId]);
   return null;
 }
 

@@ -1,13 +1,13 @@
 export const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ??
-  (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')
-    ? window.location.origin
-    : 'http://localhost:3000');
+  (import.meta.env.DEV
+    ? 'http://localhost:3000'
+    : (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')
+      ? window.location.origin
+      : 'http://localhost:3000'));
 export const OVERLAY_BASE_URL = import.meta.env.DEV ? 'http://localhost:5173' : BACKEND_URL;
 
 let _cachedToken: string | undefined;
-
-const isElectron = typeof window !== 'undefined' && !!window.streamforger?.isDesktop;
 
 function getAuthToken(): string | undefined {
   return _cachedToken;
@@ -27,7 +27,7 @@ async function fetchApiToken(): Promise<string | undefined> {
 
 let _initPromise: Promise<void> | undefined;
 async function ensureApiInit(): Promise<void> {
-  if (isElectron || _cachedToken) return;
+  if (_cachedToken) return;
   if (!_initPromise) {
     _initPromise = fetchApiToken().then(() => {});
   }

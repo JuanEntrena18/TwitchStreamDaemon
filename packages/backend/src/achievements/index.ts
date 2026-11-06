@@ -4,7 +4,7 @@ import { config } from '../config.js';
 
 async function helixGet(path: string) {
   if (!authProvider || !currentUser) throw new Error('Not authenticated');
-  const token = await authProvider.getAccessTokenForUser(currentUser.id);
+  const token = await authProvider.getAccessTokenForUser(currentUser.twitchId);
   if (!token?.accessToken) throw new Error('No OAuth token available');
 
   const res = await fetch(`https://api.twitch.tv/helix${path}`, {
@@ -31,8 +31,8 @@ export function setupAchievements(app: FastifyInstance) {
 
     try {
       const [userRes, followsRes] = await Promise.allSettled([
-        helixGet(`/users?id=${currentUser.id}`),
-        helixGet(`/channels/followers?broadcaster_id=${currentUser.id}&moderator_id=${currentUser.id}&first=1`),
+        helixGet(`/users?id=${currentUser.twitchId}`),
+        helixGet(`/channels/followers?broadcaster_id=${currentUser.twitchId}&moderator_id=${currentUser.twitchId}&first=1`),
       ]);
 
       const userData = userRes.status === 'fulfilled'

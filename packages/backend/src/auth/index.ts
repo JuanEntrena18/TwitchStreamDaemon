@@ -26,7 +26,7 @@ const SCOPES = [
 ];
 
 export let authProvider: RefreshingAuthProvider | null = null;
-export let currentUser: { id: string; login: string; displayName: string; profileImageUrl?: string } | null = null;
+export let currentUser: { id: string; twitchId: string; login: string; displayName: string; profileImageUrl?: string } | null = null;
 
 const authCallbacks: Array<() => void> = [];
 
@@ -290,6 +290,9 @@ export async function setupAuth(app: FastifyInstance) {
       // - access_denied: user denied
 
       if (!res.ok) {
+        if (currentUser) {
+          return reply.send({ status: 'authenticated', user: currentUser });
+        }
         const err = await res.json().catch(() => ({}));
         const errorType = err.message || err.error || 'authorization_pending';
         if (errorType !== 'authorization_pending') {
@@ -312,10 +315,11 @@ export async function setupAuth(app: FastifyInstance) {
       if (!twitchUser) return reply.status(500).send({ error: 'Failed to fetch user' });
 
       await finishAuth(tokenData, twitchUser);
-      reply.send({ status: 'authenticated', user: currentUser });
+      return reply.send({ status: 'authenticated', user: currentUser });
     } catch (err) {
-      req.log.warn({ err }, 'Network error polling Twitch OAuth status');
-      return reply.send({ status: 'pending', error: 'authorization_pending' });
+      const message = err instanceof Error ? err.message : String(err);
+      req.log.error({ err }, 'Failed to finish Twitch authentication');
+      return reply.status(500).send({ status: 'error', error: message });
     }
   });
 
@@ -335,11 +339,10 @@ export async function setupAuth(app: FastifyInstance) {
   // ── Status ──
 
   app.get('/auth/token', async (req, reply) => {
-    // Only expose the local token to trusted local origins (development browser mode).
-    // In the Electron build the main process injects this header automatically.
+    // Only expose the local token to trusted local origins (development browser mode / local Electron).
     const origin = req.headers.origin;
-    const allowedOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'];
-    if (origin && !allowedOrigins.includes(origin)) {
+    const isAllowedLocal = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    if (!isAllowedLocal) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     return { token: config.LOCAL_API_TOKEN };
@@ -349,7 +352,7 @@ export async function setupAuth(app: FastifyInstance) {
     let tokenScopes: string[] = [];
     try {
       if (authProvider && currentUser) {
-        const token = await authProvider.getAccessTokenForUser(currentUser.id);
+        const token = await authProvider.getAccessTokenForUser(currentUser.twitchId);
         if (token?.scope) tokenScopes = Array.isArray(token.scope) ? token.scope : (token.scope as string).split(' ');
       }
     } catch {}
@@ -380,14 +383,7 @@ async function finishAuth(
   tokenData: { access_token: string; refresh_token?: string; expires_in?: number; scope?: string | string[] },
   twitchUser: { id: string; login: string; display_name: string; profile_image_url: string },
 ) {
-  currentUser = {
-    id: twitchUser.id,
-    login: twitchUser.login,
-    displayName: twitchUser.display_name,
-    profileImageUrl: twitchUser.profile_image_url,
-  };
-
-  await prisma.user.upsert({
+  const dbUser = await prisma.user.upsert({
     where: { twitchId: twitchUser.id },
     update: {
       login: twitchUser.login,
@@ -412,16 +408,44 @@ async function finishAuth(
     },
   });
 
-  await authProvider?.addUserForToken(
-    {
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token ?? null,
-      expiresIn: tokenData.expires_in ?? null,
-      obtainmentTimestamp: Date.now(),
-      scope: normalizeScope(tokenData.scope),
-    },
-    ['chat'],
-  );
+  currentUser = {
+    id: dbUser.id,
+    twitchId: twitchUser.id,
+    login: twitchUser.login,
+    displayName: twitchUser.display_name,
+    profileImageUrl: twitchUser.profile_image_url,
+  };
+
+  if (authProvider) {
+    try {
+      if (tokenData.refresh_token) {
+        await authProvider.addUser(
+          twitchUser.id,
+          {
+            accessToken: tokenData.access_token,
+            refreshToken: tokenData.refresh_token,
+            expiresIn: tokenData.expires_in ?? null,
+            obtainmentTimestamp: Date.now(),
+            scope: normalizeScope(tokenData.scope),
+          },
+          ['chat'],
+        );
+      } else {
+        await authProvider.addUserForToken(
+          {
+            accessToken: tokenData.access_token,
+            refreshToken: null,
+            expiresIn: tokenData.expires_in ?? null,
+            obtainmentTimestamp: Date.now(),
+            scope: normalizeScope(tokenData.scope),
+          },
+          ['chat'],
+        );
+      }
+    } catch (authErr) {
+      logger.warn({ err: authErr }, 'Could not add user to authProvider, continuing with session');
+    }
+  }
   notifyAuth();
 }
 
@@ -450,24 +474,32 @@ async function restoreSession() {
     }
 
   currentUser = {
-    id: user.twitchId,
+    id: user.id,
+    twitchId: user.twitchId,
     login: user.login,
     displayName: user.displayName,
     profileImageUrl: user.avatarUrl ?? undefined,
   };
 
-  await authProvider?.addUserForToken(
-    {
-      accessToken,
-      refreshToken,
-      expiresIn: user.tokenExpiresAt
-        ? Math.floor((user.tokenExpiresAt.getTime() - Date.now()) / 1000)
-        : null,
-      obtainmentTimestamp: Date.now(),
-      scope: SCOPES,
-    },
-    ['chat'],
-  );
+  if (authProvider && refreshToken) {
+    try {
+      await authProvider.addUser(
+        user.twitchId,
+        {
+          accessToken,
+          refreshToken,
+          expiresIn: user.tokenExpiresAt
+            ? Math.floor((user.tokenExpiresAt.getTime() - Date.now()) / 1000)
+            : null,
+          obtainmentTimestamp: Date.now(),
+          scope: SCOPES,
+        },
+        ['chat'],
+      );
+    } catch (authErr) {
+      logger.warn({ err: authErr }, 'Failed to restore user in authProvider, continuing');
+    }
+  }
 
     notifyAuth();
 

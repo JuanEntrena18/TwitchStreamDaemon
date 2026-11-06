@@ -40,7 +40,7 @@ export async function setupEventSub() {
   listener = new EventSubWsListener({ apiClient });
   listener.start();
 
-  const userId = currentUser.id;
+  const userId = currentUser.twitchId;
   const channelName = currentUser.login;
 
   console.log(`🎯 Setting up EventSub subscriptions for ${currentUser.displayName}...`);
