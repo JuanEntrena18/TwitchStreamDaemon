@@ -229,19 +229,40 @@ export function ChatPanel({ channel }: Props) {
   });
   const [cyanChatUrl, setCyanChatUrl] = useState(() => localStorage.getItem('cyanChatUrl') || '');
 
-  function openOverlayWindow() {
-    if (!channel) return;
+  useEffect(() => {
+    if (!window.streamforger?.overlay) return;
+    window.streamforger.overlay.isOpen().then(setOverlayOpen).catch(() => {});
+    const timer = setInterval(() => {
+      window.streamforger?.overlay.isOpen().then(setOverlayOpen).catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const canOpenOverlay = Boolean(channel || (overlayMode === 'cyanchat' && cyanChatUrl.trim()));
+
+  function buildCyanOverlayUrl(rawCyanUrl = cyanChatUrl): string {
+    const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
+    let normalizedCyan = rawCyanUrl.trim();
+    if (normalizedCyan && !normalizedCyan.startsWith('http://') && !normalizedCyan.startsWith('https://')) {
+      normalizedCyan = `https://${normalizedCyan}`;
+    }
+    return `${overlayBaseUrl}/overlay.html?mode=cyanchat&channel=${encodeURIComponent(channel)}${normalizedCyan ? `&cyanUrl=${encodeURIComponent(normalizedCyan)}` : ''}`;
+  }
+
+  function openOverlayWindow(modeOverride?: 'chat' | 'cyanchat') {
+    const targetMode = modeOverride ?? overlayMode;
+    if (!channel && !(targetMode === 'cyanchat' && cyanChatUrl.trim())) return;
     if (window.streamforger) {
-      if (overlayMode === 'cyanchat') {
-        window.streamforger.overlay.open(cyanChatUrl || `https://chat.johnnycyan.com/?channel=${encodeURIComponent(channel)}`, true);
+      if (targetMode === 'cyanchat') {
+        window.streamforger.overlay.open(buildCyanOverlayUrl(), true);
       } else {
         window.streamforger.overlay.open(channel, false, '');
       }
       setOverlayOpen(true);
     } else {
-      const url = overlayMode === 'cyanchat'
-        ? (cyanChatUrl || `https://chat.johnnycyan.com/?channel=${encodeURIComponent(channel)}`)
-        : `${window.location.origin}/overlay.html?channel=${channel}&mode=chat`;
+      const url = targetMode === 'cyanchat'
+        ? buildCyanOverlayUrl()
+        : `${window.location.origin}/overlay.html?channel=${encodeURIComponent(channel)}&mode=chat`;
       window.open(url, 'streamforger-chat-overlay', 'width=400,height=600,menubar=no,toolbar=no,location=no,status=no');
     }
   }
@@ -274,8 +295,13 @@ export function ChatPanel({ channel }: Props) {
             {(['chat', 'cyanchat'] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => { setOverlayMode(m); localStorage.setItem('overlayMode', m); }}
-                disabled={overlayOpen}
+                onClick={() => {
+                  setOverlayMode(m);
+                  localStorage.setItem('overlayMode', m);
+                  if (overlayOpen) {
+                    openOverlayWindow(m);
+                  }
+                }}
                 className={pillClasses(overlayMode === m)}
               >
                 {m === 'chat' ? 'Chat' : 'Cyan Chat'}
@@ -284,8 +310,8 @@ export function ChatPanel({ channel }: Props) {
           </div>
           {!overlayOpen ? (
             <button
-              onClick={openOverlayWindow}
-              disabled={!channel}
+              onClick={() => openOverlayWindow()}
+              disabled={!canOpenOverlay}
               className="sf-btn sf-btn-primary"
               style={{ fontSize: '0.78rem', padding: '0.4rem 0.875rem' }}
             >
@@ -316,6 +342,16 @@ export function ChatPanel({ channel }: Props) {
               className="sf-input"
               style={{ flex: 1, fontSize: '0.78rem', fontFamily: 'monospace' }}
             />
+            {overlayOpen && (
+              <button
+                type="button"
+                onClick={() => openOverlayWindow('cyanchat')}
+                className="sf-btn sf-btn-primary"
+                style={{ fontSize: '0.72rem', padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}
+              >
+                🔄 Aplicar URL
+              </button>
+            )}
             <a
               href="https://chat.johnnycyan.com/"
               target="_blank"

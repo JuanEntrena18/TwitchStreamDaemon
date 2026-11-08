@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 export interface TtsFilters {
   excludeOwn: boolean;
@@ -28,6 +28,15 @@ interface TtsContextValue {
 }
 
 const defaultFilters: TtsFilters = { excludeOwn: false, excludeLinks: false, excludeBots: false, botNames: '', readAuthor: false };
+const TTS_STORAGE_KEY = 'streamdaemon-tts-settings';
+
+function loadSavedTts() {
+  try {
+    const raw = localStorage.getItem(TTS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
 
 const TtsContext = createContext<TtsContextValue>({
   enabled: false,
@@ -49,14 +58,24 @@ const TtsContext = createContext<TtsContextValue>({
 });
 
 export function TtsProvider({ children }: { children: ReactNode }) {
-  const [enabled, setEnabled] = useState(false);
-  const [engine, setEngine] = useState<'native' | 'piper'>('native');
-  const [piperLang, setPiperLang] = useState<'es' | 'en'>('es');
-  const [voiceURI, setVoiceURI] = useState<string | null>(null);
-  const [rate, setRate] = useState(1);
-  const [volume, setVolume] = useState(1);
-  const [filters, setFilters] = useState<TtsFilters>(defaultFilters);
+  const initial = loadSavedTts();
+  const [enabled, setEnabled] = useState<boolean>(() => Boolean(initial.enabled ?? false));
+  const [engine, setEngine] = useState<'native' | 'piper'>(() => (initial.engine === 'piper' ? 'piper' : 'native'));
+  const [piperLang, setPiperLang] = useState<'es' | 'en'>(() => (initial.piperLang === 'en' ? 'en' : 'es'));
+  const [voiceURI, setVoiceURI] = useState<string | null>(() => initial.voiceURI ?? null);
+  const [rate, setRate] = useState<number>(() => (typeof initial.rate === 'number' ? initial.rate : 1));
+  const [volume, setVolume] = useState<number>(() => (typeof initial.volume === 'number' ? initial.volume : 1));
+  const [filters, setFilters] = useState<TtsFilters>(() => ({ ...defaultFilters, ...(initial.filters || {}) }));
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        TTS_STORAGE_KEY,
+        JSON.stringify({ enabled, engine, piperLang, voiceURI, rate, volume, filters }),
+      );
+    } catch {}
+  }, [enabled, engine, piperLang, voiceURI, rate, volume, filters]);
 
   return (
     <TtsContext.Provider value={{

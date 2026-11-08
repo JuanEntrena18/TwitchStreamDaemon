@@ -78,7 +78,7 @@ export async function startServer(opts?: { port?: number; frontendDir?: string }
     reply.header('Content-Security-Policy',
       "default-src 'self'; " +
       "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://id.twitch.tv https://api.twitch.tv wss://eventsub.wss.twitch.tv https://www.googleapis.com https://oauth2.googleapis.com https://raider.io; " +
-      "frame-src 'self' https://player.twitch.tv https://www.youtube.com; " +
+      "frame-src 'self' https://player.twitch.tv https://www.youtube.com https://chat.johnnycyan.com https://*.johnnycyan.com https: http:; " +
       "img-src 'self' https://static-cdn.jtvnw.net https://howlongtobeat.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data: blob:; " +
       "media-src 'self' blob:; " +
       "script-src 'self' 'unsafe-inline' blob:; " +

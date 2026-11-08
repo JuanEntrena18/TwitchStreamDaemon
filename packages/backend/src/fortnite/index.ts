@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
+import { getIO } from '../socket/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../data');
@@ -87,18 +88,39 @@ function getStat(v: unknown): number {
   return 0;
 }
 
-async function fetchFortniteStats(username: string, mode: string): Promise<FortniteStatsResult> {
-  const cacheKey = `${username}:${mode}`;
+async function fetchFortniteStats(rawUsername: string, mode: string): Promise<FortniteStatsResult> {
+  const username = rawUsername.trim();
+  const modeKey = getModeKey(mode);
+  const cacheKey = `${username.toLowerCase()}:${modeKey}`;
   const cached = statsCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
-  const apiKey = fortniteConfig.apiKey || config.FORTNITE_API_KEY;
-  if (!apiKey) throw new Error('FORTNITE_API_KEY not configured');
+  const apiKey = (fortniteConfig.apiKey || config.FORTNITE_API_KEY || '').trim();
+  if (!apiKey) throw new Error('API Key de Fortnite-API.com no configurada');
 
-  const url = `https://fortnite-api.com/v2/stats/br/v2?name=${encodeURIComponent(username)}&accountType=epic&timeWindow=lifetime`;
-  const res = await fetch(url, { headers: { Authorization: apiKey } });
+  let res = await fetch(
+    `https://fortnite-api.com/v2/stats/br/v2?name=${encodeURIComponent(username)}&accountType=epic&timeWindow=lifetime`,
+    { headers: { Authorization: apiKey } },
+  );
+
+  // Fallback without accountType=epic if user typed a console/display name
+  if (res.status === 404) {
+    res = await fetch(
+      `https://fortnite-api.com/v2/stats/br/v2?name=${encodeURIComponent(username)}&timeWindow=lifetime`,
+      { headers: { Authorization: apiKey } },
+    );
+  }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('API Key de Fortnite-API.com inválida o no autorizada (401).');
+    }
+    if (res.status === 403) {
+      throw new Error('Las estadísticas de esta cuenta están en privado (403). Activa "Estadísticas de carrera públicas" en Fortnite.');
+    }
+    if (res.status === 404) {
+      throw new Error(`No se encontró el jugador "${username}" en Fortnite-API.com (404).`);
+    }
     const text = await res.text();
     throw new Error(`Fortnite API error ${res.status}: ${text}`);
   }
@@ -111,12 +133,11 @@ async function fetchFortniteStats(username: string, mode: string): Promise<Fortn
       stats?: FortniteApiStats;
     };
   };
-  if (body.status !== 200 || !body.data) throw new Error('Invalid Fortnite API response');
+  if (body.status !== 200 || !body.data) throw new Error('Respuesta inválida de Fortnite-API.com');
 
   const statsAll = body.data.stats?.all;
-  if (!statsAll) throw new Error('No stats found for this user');
+  if (!statsAll) throw new Error('No se encontraron estadísticas para este jugador');
 
-  const modeKey = getModeKey(mode);
   let modeStats = statsAll[modeKey];
   // Fall back to overall when mode-specific stats are all zero
   if (modeStats && modeKey !== 'overall') {
@@ -124,7 +145,7 @@ async function fetchFortniteStats(username: string, mode: string): Promise<Fortn
     if (zero) modeStats = statsAll.overall;
   }
   if (!modeStats) modeStats = statsAll.overall;
-  if (!modeStats) throw new Error('No stats found for this user');
+  if (!modeStats) throw new Error('No se encontraron estadísticas para este jugador');
 
   const s = (k: string) => getStat(modeStats?.[k]);
   const result = {
@@ -159,12 +180,32 @@ export function setupFortnite(app: FastifyInstance) {
   // Update config
   app.put('/fortnite/config', async (req, reply) => {
     const { apiKey, epicUsername, statsMode, layout } = req.body as Partial<FortniteConfig>;
-    if (apiKey !== undefined && apiKey !== '') fortniteConfig.apiKey = apiKey;
-    if (epicUsername !== undefined) fortniteConfig.epicUsername = epicUsername;
+    if (apiKey !== undefined && apiKey.trim() !== '') fortniteConfig.apiKey = apiKey.trim();
+    if (epicUsername !== undefined) fortniteConfig.epicUsername = epicUsername.trim();
     if (statsMode !== undefined) fortniteConfig.statsMode = statsMode;
     if (layout !== undefined) fortniteConfig.layout = layout;
     saveConfig();
-    reply.send({ ok: true });
+    statsCache.clear();
+
+    try {
+      getIO()?.emit('fortnite:config', {
+        epicUsername: fortniteConfig.epicUsername,
+        statsMode: fortniteConfig.statsMode,
+        layout: fortniteConfig.layout,
+      });
+    } catch {}
+
+    let stats: FortniteStatsResult | null = null;
+    let statsError: string | null = null;
+    if (fortniteConfig.apiKey && fortniteConfig.epicUsername) {
+      try {
+        stats = await fetchFortniteStats(fortniteConfig.epicUsername, fortniteConfig.statsMode);
+      } catch (err) {
+        statsError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    reply.send({ ok: true, stats, statsError });
   });
 
   // Fetch stats for a player

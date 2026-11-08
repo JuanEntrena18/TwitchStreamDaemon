@@ -63,12 +63,16 @@ export function ChatOverlay({ channel, fontFamily = "'Inter', sans-serif", fontS
     return () => { socket.off('connect', join); };
   }, [channel, socket]);
 
-  useSocketEvent('chat:message', useCallback((msg: ChatMessage) => {
+  useSocketEvent('chat:message', useCallback((msg: ChatMessage & { isHistory?: boolean }) => {
     setMessages((prev) => [...prev.slice(-MAX_MESSAGES + 1), msg]);
-    if (ttsEnabled && !recentTtsRef.current.includes(msg.text)) {
-      recentTtsRef.current.push(msg.text);
-      if (recentTtsRef.current.length > 10) recentTtsRef.current.shift();
-      speak(msg.text, ttsVoiceURI, ttsRate, ttsVolume, ttsEngine, ttsPiperLang);
+    if (msg.isHistory) return;
+    if (ttsEnabled && msg.text && !msg.text.trim().startsWith('!')) {
+      const dedupKey = msg.id || `${msg.user?.displayName}:${msg.text}:${msg.timestamp}`;
+      if (!recentTtsRef.current.includes(dedupKey)) {
+        recentTtsRef.current.push(dedupKey);
+        if (recentTtsRef.current.length > 30) recentTtsRef.current.shift();
+        speak(msg.text, ttsVoiceURI, ttsRate, ttsVolume, ttsEngine, ttsPiperLang);
+      }
     }
   }, [ttsEnabled, ttsVoiceURI, ttsRate, ttsVolume, ttsEngine, ttsPiperLang]));
 

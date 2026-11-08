@@ -810,9 +810,12 @@ const params      = new URLSearchParams(location.search);
 const CHANNEL     = params.get('channel') || '';
 const DEMO_MODE   = params.get('demo') === 'true';
 const BACKEND_URL = params.get('backend') || 'http://localhost:3000';
-let   EPIC_USER   = params.get('epic') || '';
-let   STATS_MODE  = params.get('mode') || 'overall';
-const LAYOUT      = params.get('layout') || 'stats';
+const URL_EPIC    = params.get('epic') || '';
+const URL_MODE    = params.get('mode') || '';
+const URL_LAYOUT  = params.get('layout') || '';
+let   EPIC_USER   = URL_EPIC;
+let   STATS_MODE  = URL_MODE || 'overall';
+let   LAYOUT      = URL_LAYOUT || 'stats';
 const WIDGET_ONLY = params.get('widget') || '';
 const HIDE_LAYERS = (params.get('hide') || '').split(',').map(s => s.trim()).filter(Boolean);
 const EDIT_MODE   = params.get('edit') === 'true' || params.get('interactive') === 'true';
@@ -1044,26 +1047,36 @@ function showLastFollow(name) {
 ────────────────────────────────────────────────────────── */
 async function fetchFnStats() {
   const statusPill = document.getElementById('fn-api-status');
-  if (!EPIC_USER) {
+  if (!URL_EPIC) {
     try {
       const cfgRes = await fetch(`${BACKEND_URL}/fortnite/config`);
       if (cfgRes.ok) {
         const cfg = await cfgRes.json();
-        if (cfg.epicUsername) EPIC_USER = cfg.epicUsername;
-        if (cfg.statsMode) STATS_MODE = cfg.statsMode;
+        if (cfg.epicUsername !== undefined) EPIC_USER = cfg.epicUsername;
+        if (!URL_MODE && cfg.statsMode) STATS_MODE = cfg.statsMode;
+        if (!URL_LAYOUT && cfg.layout) {
+          LAYOUT = cfg.layout;
+          initChatLayout();
+        }
       }
     } catch {}
   }
 
   if (!EPIC_USER) {
-    if (statusPill) statusPill.textContent = 'SIN EPIC ID';
+    if (statusPill) {
+      statusPill.textContent = 'SIN EPIC ID';
+      statusPill.classList.remove('ok');
+    }
     return;
   }
 
   try {
     const r = await fetch(`${BACKEND_URL}/fortnite/stats/${encodeURIComponent(EPIC_USER)}?mode=${STATS_MODE}`);
     if (!r.ok) {
-      if (statusPill) statusPill.textContent = 'OFFLINE';
+      if (statusPill) {
+        statusPill.textContent = 'OFFLINE';
+        statusPill.classList.remove('ok');
+      }
       return;
     }
     const data = await r.json();
@@ -1073,11 +1086,14 @@ async function fetchFnStats() {
     document.getElementById('fn-kd').textContent      = Number(data.kd ?? 0).toFixed(2);
     document.getElementById('fn-winrate').textContent = Number(data.winRate ?? 0).toFixed(1) + '%';
     if (statusPill) {
-      statusPill.textContent = EPIC_USER;
+      statusPill.textContent = `${EPIC_USER} · ${(data.mode || STATS_MODE).toUpperCase()}`;
       statusPill.classList.add('ok');
     }
   } catch {
-    if (statusPill) statusPill.textContent = 'ERROR';
+    if (statusPill) {
+      statusPill.textContent = 'ERROR';
+      statusPill.classList.remove('ok');
+    }
   }
 }
 
@@ -1088,12 +1104,21 @@ const MAX_CHAT_MSGS = 50;
 
 function initChatLayout() {
   const el = document.getElementById('fn-chat');
+  const rf = document.getElementById('recent-follow');
   if (!el || WIDGET_ONLY === 'chat') return;
   el.classList.remove('left', 'right');
   if (LAYOUT === 'chat-right') {
     el.classList.add('right');
+    if (rf && !WIDGET_ONLY) {
+      rf.style.left = '28px';
+      rf.style.right = 'auto';
+    }
   } else {
     el.classList.add('left');
+    if (rf && !WIDGET_ONLY) {
+      rf.style.right = '28px';
+      rf.style.left = 'auto';
+    }
   }
 }
 
@@ -1184,12 +1209,22 @@ function initSocket() {
     });
   });
 
-  socket.on('channel:raid', ({ fromBroadcasterDisplayName, viewers }) => {
+  socket.on('channel:raid', ({ fromDisplayName, fromBroadcasterDisplayName, viewerCount, viewers }) => {
     enqueueAlert({
       type: 'raid',
-      user: fromBroadcasterDisplayName,
-      detail: `${Number(viewers || 0).toLocaleString()} espectadores`,
+      user: fromDisplayName || fromBroadcasterDisplayName || 'Raid',
+      detail: `${Number(viewerCount ?? viewers ?? 0).toLocaleString()} espectadores`,
     });
+  });
+
+  socket.on('fortnite:config', (cfg) => {
+    if (!URL_EPIC && cfg.epicUsername !== undefined) EPIC_USER = cfg.epicUsername;
+    if (!URL_MODE && cfg.statsMode) STATS_MODE = cfg.statsMode;
+    if (!URL_LAYOUT && cfg.layout) {
+      LAYOUT = cfg.layout;
+      initChatLayout();
+    }
+    fetchFnStats();
   });
 
   socket.on('channel:redemption', ({ userDisplayName, rewardTitle }) => {

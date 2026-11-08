@@ -1,4 +1,4 @@
-import { BACKEND_URL } from './api';
+import { apiGet } from './api';
 
 // ─── Configuration ───────────────────────────────────────────────────
 /** Max utterances tracked before we flush the queue and speak only the latest */
@@ -11,11 +11,9 @@ const ORPHAN_TIMEOUT_MS = 30_000;
 // ─── Public helpers ──────────────────────────────────────────────────
 
 export function getVoices(): SpeechSynthesisVoice[] {
-  return (
-    window.speechSynthesis
-      ?.getVoices()
-      ?.filter((v) => v.lang.startsWith('es') || v.lang.startsWith('en')) ?? []
-  );
+  const all = window.speechSynthesis?.getVoices() ?? [];
+  const filtered = all.filter((v) => v.lang.toLowerCase().startsWith('es') || v.lang.toLowerCase().startsWith('en'));
+  return filtered.length > 0 ? filtered : all;
 }
 
 // ─── Utterance tracking (prevents Chrome GC bug + bounded size) ──────
@@ -103,7 +101,7 @@ function processPiperQueue(volume: number) {
   });
 }
 
-function speakPiper(text: string, volume: number, lang: 'es' | 'en') {
+function speakPiper(text: string, rate: number, volume: number, lang: 'es' | 'en') {
   if (piperQueue.length >= MAX_QUEUE_SIZE) {
     piperQueue.forEach(u => URL.revokeObjectURL(u));
     piperQueue.length = 0;
@@ -114,11 +112,9 @@ function speakPiper(text: string, volume: number, lang: 'es' | 'en') {
     }
   }
 
-  const url = new URL(`${BACKEND_URL}/api/tts/piper`);
-  url.searchParams.set('text', text);
-  url.searchParams.set('lang', lang);
+  const path = `/api/tts/piper?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}`;
   
-  fetch(url.toString())
+  apiGet(path)
     .then(res => {
       if (!res.ok) throw new Error(`Piper returned ${res.status}`);
       return res.blob();
@@ -128,7 +124,56 @@ function speakPiper(text: string, volume: number, lang: 'es' | 'en') {
       piperQueue.push(audioUrl);
       processPiperQueue(volume);
     })
-    .catch(err => console.error('[TTS] Piper Error:', err));
+    .catch(err => {
+      console.warn('[TTS] Piper Error, falling back to native TTS:', err);
+      speakNative(text, null, rate, volume, lang);
+    });
+}
+
+function speakNative(
+  text: string,
+  voiceURI: string | null,
+  rate: number,
+  volume: number,
+  fallbackLang: 'es' | 'en' = 'es',
+) {
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+
+  if (synth.paused) {
+    try { synth.resume(); } catch {}
+  }
+
+  // Queue limit: flush stale queue so the user hears recent messages
+  if (tracked.length >= MAX_QUEUE_SIZE) {
+    synth.cancel();
+    tracked.length = 0;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  tracked.push({ utterance, createdAt: Date.now() });
+
+  utterance.onend = () => untrack(utterance);
+  utterance.onerror = () => untrack(utterance);
+
+  const availableVoices = getVoices();
+  if (voiceURI) {
+    const found = availableVoices.find((v) => v.voiceURI === voiceURI);
+    if (found) utterance.voice = found;
+  }
+  if (!utterance.voice && availableVoices.length > 0) {
+    const preferred =
+      availableVoices.find((v) => v.lang.toLowerCase().startsWith(fallbackLang)) ||
+      availableVoices.find((v) => v.default) ||
+      availableVoices[0];
+    if (preferred) utterance.voice = preferred;
+  }
+  utterance.lang = utterance.voice?.lang || (fallbackLang === 'en' ? 'en-US' : 'es-ES');
+  utterance.rate = rate;
+  utterance.volume = volume;
+
+  synth.speak(utterance);
+  startKeepalive();
 }
 
 // ─── Public API ──────────────────────────────────────────────────────
@@ -148,35 +193,13 @@ export function speak(
   engine: 'native' | 'piper' = 'native',
   piperLang: 'es' | 'en' = 'es'
 ) {
+  const cleaned = text.trim();
+  if (!cleaned) return;
   if (engine === 'piper') {
-    speakPiper(text, volume, piperLang);
+    speakPiper(cleaned, rate, volume, piperLang);
     return;
   }
-
-  const synth = window.speechSynthesis;
-  if (!synth) return;
-
-  // Queue limit: flush stale queue so the user hears recent messages
-  if (tracked.length >= MAX_QUEUE_SIZE) {
-    synth.cancel();
-    tracked.length = 0;
-  }
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  tracked.push({ utterance, createdAt: Date.now() });
-
-  utterance.onend = () => untrack(utterance);
-  utterance.onerror = () => untrack(utterance);
-
-  if (voiceURI) {
-    const found = getVoices().find((v) => v.voiceURI === voiceURI);
-    if (found) utterance.voice = found;
-  }
-  utterance.rate = rate;
-  utterance.volume = volume;
-
-  synth.speak(utterance);
-  startKeepalive();
+  speakNative(cleaned, voiceURI, rate, volume, piperLang);
 }
 
 /** Cancel all pending/active speech and release tracked references. */

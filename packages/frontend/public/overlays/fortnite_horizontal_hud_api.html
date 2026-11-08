@@ -914,9 +914,12 @@ const params          = new URLSearchParams(location.search);
 const CHANNEL         = params.get('channel') || '';
 const DEMO_MODE       = params.get('demo') === 'true';
 const BACKEND_URL     = params.get('backend') || 'http://localhost:3000';
-let   EPIC_USER       = params.get('epic') || '';
-let   STATS_MODE      = params.get('mode') || 'overall';
-const LAYOUT          = params.get('layout') || 'stats'; // stats, chat-left, chat-right
+const URL_EPIC         = params.get('epic') || '';
+const URL_MODE         = params.get('mode') || '';
+const URL_LAYOUT       = params.get('layout') || '';
+let   EPIC_USER        = URL_EPIC;
+let   STATS_MODE       = URL_MODE || 'overall';
+let   LAYOUT           = URL_LAYOUT || 'stats'; // stats, chat-left, chat-right
 const WIDGET_MODE     = params.get('widget') || ''; // stream-stats | career-stats | chat | recent-follow | info-bar | alerts
 const HIDE_LIST       = (params.get('hide') || '').split(',').map(s => s.trim()).filter(Boolean);
 const INTERACTIVE_MODE = params.get('edit') === 'true' || params.get('interactive') === 'true';
@@ -1083,13 +1086,17 @@ function applyHud(data) {
 }
 
 async function fetchFnStats() {
-  if (!EPIC_USER) {
+  if (!URL_EPIC) {
     try {
       const cfgRes = await fetch(`${BACKEND_URL}/fortnite/config`);
       if (cfgRes.ok) {
         const cfg = await cfgRes.json();
-        if (cfg.epicUsername) EPIC_USER = cfg.epicUsername;
-        if (cfg.statsMode) STATS_MODE = cfg.statsMode;
+        if (cfg.epicUsername !== undefined) EPIC_USER = cfg.epicUsername;
+        if (!URL_MODE && cfg.statsMode) STATS_MODE = cfg.statsMode;
+        if (!URL_LAYOUT && cfg.layout) {
+          LAYOUT = cfg.layout;
+          initChatLayout();
+        }
       }
     } catch {}
   }
@@ -1110,12 +1117,21 @@ const MAX_CHAT_MSGS = 18;
 
 function initChatLayout() {
   const el = document.getElementById('fn-chat');
+  const rf = document.getElementById('recent-follow');
   if (!el) return;
   el.classList.remove('left', 'right');
   if (LAYOUT === 'chat-right') {
     el.classList.add('right');
+    if (rf && !WIDGET_MODE) {
+      rf.style.left = '28px';
+      rf.style.right = 'auto';
+    }
   } else {
     el.classList.add('left');
+    if (rf && !WIDGET_MODE) {
+      rf.style.right = '28px';
+      rf.style.left = 'auto';
+    }
   }
 }
 
@@ -1249,8 +1265,22 @@ function initSocket() {
     enqueueAlert({ type: 'bits', user: userDisplayName, detail: `${bits.toLocaleString()} Bits`, msg: message });
   });
 
-  socket.on('channel:raid', ({ fromDisplayName, viewerCount }) => {
-    enqueueAlert({ type: 'raid', user: fromDisplayName, detail: `Escuadrón de ${viewerCount} espectadores` });
+  socket.on('channel:raid', ({ fromDisplayName, fromBroadcasterDisplayName, viewerCount, viewers }) => {
+    enqueueAlert({
+      type: 'raid',
+      user: fromDisplayName || fromBroadcasterDisplayName || 'Raid',
+      detail: `Escuadrón de ${Number(viewerCount ?? viewers ?? 0).toLocaleString()} espectadores`,
+    });
+  });
+
+  socket.on('fortnite:config', (cfg) => {
+    if (!URL_EPIC && cfg.epicUsername !== undefined) EPIC_USER = cfg.epicUsername;
+    if (!URL_MODE && cfg.statsMode) STATS_MODE = cfg.statsMode;
+    if (!URL_LAYOUT && cfg.layout) {
+      LAYOUT = cfg.layout;
+      initChatLayout();
+    }
+    fetchFnStats();
   });
 
   socket.on('channel:redemption', ({ userDisplayName, rewardTitle, input }) => {

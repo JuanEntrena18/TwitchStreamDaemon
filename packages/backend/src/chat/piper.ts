@@ -118,28 +118,46 @@ export async function generateAudio(text: string, lang: 'es' | 'en' = 'es'): Pro
   const tempFileName = path.join(os.tmpdir(), `piper_${crypto.randomUUID()}.wav`);
   
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const safeReject = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      try {
+        if (fs.existsSync(tempFileName)) fs.unlinkSync(tempFileName);
+      } catch {}
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+
     const piper = spawn(PIPER_EXE, [
       '-m', modelPath,
       '-f', tempFileName
     ]);
+
+    piper.on('error', (err) => {
+      safeReject(err);
+    });
+
+    piper.stdin.on('error', () => {
+      // ignore EPIPE if process exits early
+    });
     
-    piper.stderr.on('data', (err) => {
+    piper.stderr.on('data', () => {
       // debug logs
     });
     
     piper.on('close', (code) => {
+      if (settled) return;
       if (code !== 0) {
-        if (fs.existsSync(tempFileName)) fs.unlinkSync(tempFileName);
-        return reject(new Error(`Piper exited with code ${code}`));
+        return safeReject(new Error(`Piper exited with code ${code}`));
       }
       
       try {
+        settled = true;
         const audioBuffer = fs.readFileSync(tempFileName);
         fs.unlinkSync(tempFileName);
         resolve(audioBuffer);
       } catch (err) {
-        if (fs.existsSync(tempFileName)) fs.unlinkSync(tempFileName);
-        reject(err);
+        safeReject(err);
       }
     });
     

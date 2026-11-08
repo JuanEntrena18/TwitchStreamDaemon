@@ -425,7 +425,7 @@ function handleYouTubeChatCommand(channelSlug: string, authorName: string, text:
   });
 }
 
-function processYouTubeChatItem(item: YouTubeChatMessageItem) {
+function processYouTubeChatItem(item: YouTubeChatMessageItem, isHistory = false) {
   if (!item.id || processedMessageIds.has(item.id)) return;
   processedMessageIds.add(item.id);
   if (processedMessageIds.size > 500) {
@@ -453,7 +453,7 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem) {
     const text = snippet.textMessageDetails?.messageText || snippet.displayMessage || '';
     if (!text) return;
 
-    if (roomSlug) {
+    if (roomSlug && !isHistory) {
       handleYouTubeChatCommand(roomSlug, displayName, text, Boolean(author.isChatSponsor));
       incrementChatCounter(roomSlug, displayName);
       checkMessage(roomSlug, displayName, text);
@@ -462,8 +462,10 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem) {
     emitToActiveRooms('chat:message', {
       id: item.id,
       platform: 'youtube',
+      isHistory,
       user: {
         id: authorId,
+        username: displayName.toLowerCase().replace(/\s+/g, '_'),
         displayName,
         color: '#FF0033',
         badges,
@@ -473,6 +475,8 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem) {
     });
     return;
   }
+
+  if (isHistory) return;
 
   // 2. Super Chat / Super Sticker -> channel:cheer + chat:message
   if (msgType === 'superChatEvent' || msgType === 'superStickerEvent') {
@@ -635,13 +639,28 @@ async function pollYouTubeLiveChat() {
     return;
   }
 
+  const isFirstPollBatch = !nextPageToken;
   if (data.nextPageToken) {
     nextPageToken = data.nextPageToken;
   }
 
   if (Array.isArray(data.items)) {
-    for (const item of data.items) {
-      processYouTubeChatItem(item);
+    if (isFirstPollBatch) {
+      // Mark older messages as processed, and only emit the last 15 as history so we don't trigger a TTS/alert flood
+      const recentSlice = data.items.slice(-15);
+      const recentIds = new Set(recentSlice.map((it) => it.id));
+      for (const item of data.items) {
+        if (!recentIds.has(item.id) && item.id) {
+          processedMessageIds.add(item.id);
+        }
+      }
+      for (const item of recentSlice) {
+        processYouTubeChatItem(item, true);
+      }
+    } else {
+      for (const item of data.items) {
+        processYouTubeChatItem(item, false);
+      }
     }
   }
 

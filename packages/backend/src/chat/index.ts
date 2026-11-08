@@ -105,14 +105,30 @@ export async function setupChat() {
 
   loadGreetingConfigs();
 
-  chatClient = new ChatClient({ authProvider, channels: [], requestMembershipEvents: true });
+  if (currentUser?.login) {
+    joinedChannels.add(currentUser.login.toLowerCase());
+  }
+
+  chatClient = new ChatClient({
+    authProvider,
+    channels: () => Array.from(joinedChannels),
+    requestMembershipEvents: true,
+  });
 
   chatClient.onDisconnect((manually, reason) => {
     logger.info({ manually, reason: reason?.message || reason }, 'Chat client disconnected');
   });
 
-  chatClient.onAuthenticationSuccess(() => {
+  chatClient.onAuthenticationSuccess(async () => {
     logger.info('Chat authentication successful');
+    for (const ch of joinedChannels) {
+      try {
+        await chatClient?.join(ch);
+        logger.info({ channel: ch }, 'Joined Twitch IRC channel on auth success');
+      } catch (err) {
+        logger.debug({ channel: ch, err }, 'Channel join inside onAuthenticationSuccess');
+      }
+    }
   });
 
   chatClient.onAuthenticationFailure((message, retryCount) => {
@@ -144,6 +160,7 @@ export async function setupChat() {
       platform: 'twitch',
       user: {
         id: msg.userInfo.userId,
+        username: user,
         displayName: msg.userInfo.displayName,
         color: msg.userInfo.color || '#ffffff',
         badges: Array.from(msg.userInfo.badges.keys()),
@@ -181,18 +198,6 @@ export async function setupChat() {
       pendingGreetings.delete(key);
     }
   });
-
-  if (currentUser?.login) {
-    joinedChannels.add(currentUser.login.toLowerCase());
-  }
-  for (const ch of joinedChannels) {
-    try {
-      await chatClient.join(ch);
-      logger.info({ channel: ch }, 'Re-joined channel');
-    } catch (err) {
-      logger.error({ channel: ch, err }, 'Failed to re-join channel');
-    }
-  }
 }
 
 export function setupChatGreeting(app: FastifyInstance) {
@@ -260,18 +265,18 @@ export function getAddTicketsFn() {
 export async function joinChannel(rawChannel: string) {
   const channel = String(rawChannel || '').trim().replace(/^[@#]/, '').toLowerCase();
   if (!channel || !/^[a-z0-9_]{2,25}$/.test(channel)) return;
-  if (joinedChannels.has(channel)) return;
+  const alreadyTracked = joinedChannels.has(channel);
   joinedChannels.add(channel);
   if (!chatClient) {
     logger.debug({ channel }, 'Channel queued (chat client not ready)');
     return;
   }
+  if (alreadyTracked) return;
   try {
     await chatClient.join(channel);
     logger.info({ channel }, 'Joined channel');
   } catch (err) {
-    joinedChannels.delete(channel);
-    logger.error({ channel, err }, 'Failed to join channel');
+    logger.debug({ channel, err }, 'Channel queued for join on register');
   }
 }
 
@@ -314,7 +319,8 @@ export async function sendMessage(channel: string, message: string) {
     id: `send-${Date.now()}`,
     platform: currentUser ? 'twitch' : 'youtube',
     user: {
-      id: activeUser?.id ?? 'self',
+      id: currentUser?.twitchId ?? currentYouTubeUser?.channelId ?? activeUser?.id ?? 'self',
+      username: currentUser?.login ?? activeUser?.displayName ?? 'streamdaemon',
       displayName: activeUser?.displayName ?? 'StreamDaemon',
       color: currentUser ? '#7c3aed' : '#ff0033',
       badges: ['broadcaster'],

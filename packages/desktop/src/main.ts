@@ -1,6 +1,6 @@
 import {
   app, BrowserWindow, shell, ipcMain, session,
-  globalShortcut, Menu, MenuItem,
+  globalShortcut, Menu, MenuItem, screen,
 } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -283,6 +283,41 @@ function loadMainAppUrl(port = backendPort, attempts = 8): void {
 }
 
 // ── Overlay window ────────────────────────────────────────
+function computeOverlayInitialPosition(width = 400, height = 600): { x: number; y: number } {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const bounds = mainWindow.getBounds();
+      const candidateX = bounds.x + bounds.width + 10;
+      const candidateY = Math.max(20, bounds.y);
+      const displays = screen.getAllDisplays();
+      const fitsToTheRight = displays.some((d) => {
+        const wa = d.workArea;
+        return (
+          candidateX + Math.min(width, 220) <= wa.x + wa.width &&
+          candidateX >= wa.x &&
+          candidateY + 100 <= wa.y + wa.height &&
+          candidateY >= wa.y - 40
+        );
+      });
+      if (fitsToTheRight) {
+        return { x: candidateX, y: candidateY };
+      }
+      const activeDisplay = screen.getDisplayMatching(bounds);
+      const wa = activeDisplay.workArea;
+      const dockedX = Math.max(wa.x + 12, wa.x + wa.width - width - 16);
+      const dockedY = Math.max(wa.y + 36, Math.min(bounds.y + 36, wa.y + wa.height - height - 16));
+      return { x: dockedX, y: dockedY };
+    }
+    const primaryWa = screen.getPrimaryDisplay().workArea;
+    return {
+      x: Math.max(primaryWa.x + 12, primaryWa.x + primaryWa.width - width - 20),
+      y: primaryWa.y + 60,
+    };
+  } catch {
+    return { x: 100, y: 100 };
+  }
+}
+
 function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: string) {
   if (overlayWindow) overlayWindow.close();
   if (overlaySettingsWindow) { overlaySettingsWindow.close(); overlaySettingsWindow = null; }
@@ -293,9 +328,13 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
     : `${overlayBaseUrl}/overlay.html?mode=chat&channel=${encodeURIComponent(urlOrChannel)}${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
 
   overlayFrameless = true;
+  overlayIgnoreMouse = false;
+  const initialPos = computeOverlayInitialPosition(400, 600);
   overlayWindow = new BrowserWindow({
     width: 400,
     height: 600,
+    x: initialPos.x,
+    y: initialPos.y,
     transparent: true,
     backgroundColor: '#00000000',
     alwaysOnTop: true,
@@ -311,15 +350,12 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
     },
   });
 
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const bounds = mainWindow.getBounds();
-    overlayWindow.setPosition(bounds.x + bounds.width + 10, bounds.y);
-  } else {
-    overlayWindow.setPosition(100, 100);
-  }
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  overlayWindow.setPosition(initialPos.x, initialPos.y);
 
   overlayWindow.loadURL(overlayUrl).then(() => {
     overlayWindow?.show();
+    overlayWindow?.focus();
   }).catch((err) => {
     console.error('[overlay] Failed to load overlay URL:', err);
     overlayWindow?.show();
@@ -337,7 +373,11 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
   });
 
   overlayWindow.webContents.on('will-navigate', (event, url) => {
-    const isAllowed = url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+    const isAllowed =
+      url.startsWith('http://localhost:') ||
+      url.startsWith('http://127.0.0.1:') ||
+      url.startsWith('https://') ||
+      url.startsWith('http://');
     if (!isAllowed) {
       event.preventDefault();
     }
@@ -351,7 +391,7 @@ function createOverlayWindow(urlOrChannel: string, isUrl: boolean, theme?: strin
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;
-    overlayIgnoreMouse = true;
+    overlayIgnoreMouse = false;
     overlayFrameless = true;
     if (overlaySettingsWindow) { overlaySettingsWindow.close(); overlaySettingsWindow = null; }
   });
@@ -361,6 +401,7 @@ function recreateOverlayWindow() {
   if (!overlayWindow) return;
   const bounds = overlayWindow.getBounds();
   overlayFrameless = !overlayFrameless;
+  overlayIgnoreMouse = false;
   const currentUrl = overlayWindow.webContents.getURL();
   overlayWindow.close();
   overlayWindow = null;
@@ -383,6 +424,7 @@ function recreateOverlayWindow() {
       nodeIntegration: false,
     },
   });
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.loadURL(currentUrl).then(() => overlayWindow?.show()).catch(() => overlayWindow?.show());
   overlayWindow.setIgnoreMouseEvents(false);
   overlayWindow.webContents.on('did-finish-load', () => {
@@ -398,7 +440,7 @@ function recreateOverlayWindow() {
   });
   overlayWindow.on('closed', () => {
     overlayWindow = null;
-    overlayIgnoreMouse = true;
+    overlayIgnoreMouse = false;
     overlayFrameless = true;
     if (overlaySettingsWindow) { overlaySettingsWindow.close(); overlaySettingsWindow = null; }
   });
@@ -440,11 +482,15 @@ function toggleClickThrough() {
 // ── IPC ───────────────────────────────────────────────────
 
 ipcMain.on('overlay:open', (_e, url: string, isUrl: boolean, theme?: string) => {
-  if (isUrl && !url.startsWith('http://localhost:') && !url.startsWith('http://127.0.0.1:') && !url.startsWith('file://')) {
-    console.warn('[security] Blocked untrusted overlay URL:', url);
+  let finalUrl = (url || '').trim();
+  if (isUrl && finalUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://') && !finalUrl.startsWith('file://')) {
+    finalUrl = `https://${finalUrl}`;
+  }
+  if (isUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://') && !finalUrl.startsWith('file://')) {
+    console.warn('[security] Blocked untrusted overlay URL:', finalUrl);
     return;
   }
-  createOverlayWindow(url, isUrl, theme);
+  createOverlayWindow(finalUrl, isUrl, theme);
 });
 ipcMain.on('overlay:close', () => overlayWindow?.close());
 ipcMain.handle('overlay:isOpen', () => overlayWindow !== null && !overlayWindow.isDestroyed());
@@ -523,12 +569,8 @@ ipcMain.on('overlay:showContextMenu', () => {
     click: () => {
       if (!overlayWindow) return;
       const defaultW = 400, defaultH = 600;
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        const bounds = mainWindow.getBounds();
-        overlayWindow.setBounds({ x: bounds.x + bounds.width + 10, y: bounds.y, width: defaultW, height: defaultH });
-      } else {
-        overlayWindow.setBounds({ x: 100, y: 100, width: defaultW, height: defaultH });
-      }
+      const pos = computeOverlayInitialPosition(defaultW, defaultH);
+      overlayWindow.setBounds({ x: pos.x, y: pos.y, width: defaultW, height: defaultH });
     },
   }));
   menu.popup({ window: overlayWindow });
@@ -541,12 +583,8 @@ ipcMain.on('overlay:toggleBorders', () => recreateOverlayWindow());
 ipcMain.on('overlay:resetWindow', () => {
   if (!overlayWindow) return;
   const defaultW = 400, defaultH = 600;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const bounds = mainWindow.getBounds();
-    overlayWindow.setBounds({ x: bounds.x + bounds.width + 10, y: bounds.y, width: defaultW, height: defaultH });
-  } else {
-    overlayWindow.setBounds({ x: 100, y: 100, width: defaultW, height: defaultH });
-  }
+  const pos = computeOverlayInitialPosition(defaultW, defaultH);
+  overlayWindow.setBounds({ x: pos.x, y: pos.y, width: defaultW, height: defaultH });
 });
 
 // Open overlay settings window
@@ -600,6 +638,31 @@ app.whenReady().then(async () => {
     (details, callback) => {
       details.requestHeaders['x-local-token'] = LOCAL_API_TOKEN;
       callback({ requestHeaders: details.requestHeaders });
+    },
+  );
+
+  // Allow Cyan Chat & external chat overlay iframes to render inside overlay.html
+  session.defaultSession.webRequest.onHeadersReceived(
+    {
+      urls: [
+        'https://chat.johnnycyan.com/*',
+        'https://*.johnnycyan.com/*',
+        'http://chat.johnnycyan.com/*',
+      ],
+    },
+    (details, callback) => {
+      const responseHeaders = { ...(details.responseHeaders || {}) };
+      for (const key of Object.keys(responseHeaders)) {
+        const lower = key.toLowerCase();
+        if (lower === 'x-frame-options') {
+          delete responseHeaders[key];
+        } else if (lower === 'content-security-policy') {
+          responseHeaders[key] = (responseHeaders[key] || []).map((v) =>
+            v.replace(/frame-ancestors[^;]*;?/gi, ''),
+          );
+        }
+      }
+      callback({ responseHeaders });
     },
   );
 

@@ -30,16 +30,22 @@ export function TransparentOverlay({ channel }: Props) {
 
   const [mode, setMode] = useState<'channel' | 'cyanchat' | 'url' | 'custom'>('channel');
   const [isOpen, setIsOpen] = useState(false);
-  const [clickThrough, setClickThrough] = useState(true);
+  const [clickThrough, setClickThrough] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState('');
+  const [cyanChatUrl, setCyanChatUrl] = useState(() => localStorage.getItem('cyanChatUrl') || '');
   const [customUrl, setCustomUrl] = useState('https://chat.johnnycyan.com/');
   const [customGame, setCustomGame] = useState('');
   const [authStatus, setAuthStatus] = useState<'checking' | 'logged' | 'guest'>('checking');
 
   useEffect(() => {
-    window.streamforger?.overlay.isOpen().then(setIsOpen);
-    window.streamforger?.overlay.getClickThrough().then(setClickThrough);
+    window.streamforger?.overlay.isOpen().then(setIsOpen).catch(() => {});
+    window.streamforger?.overlay.getClickThrough().then(setClickThrough).catch(() => {});
     checkAuth();
+    const timer = setInterval(() => {
+      window.streamforger?.overlay.isOpen().then(setIsOpen).catch(() => {});
+      window.streamforger?.overlay.getClickThrough().then(setClickThrough).catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
   }, []);
 
   const checkAuth = async () => {
@@ -59,16 +65,23 @@ export function TransparentOverlay({ channel }: Props) {
       setIsOpen(false);
       return;
     }
+    const baseUrl = import.meta.env.DEV
+      ? 'http://localhost:5173'
+      : (window.streamforger?.backendUrl || window.location.origin);
     if (mode === 'cyanchat') {
-      const baseUrl = window.streamforger?.backendUrl || 'http://localhost:3000';
-      window.streamforger?.overlay.open(`${baseUrl}/overlay.html?mode=cyanchat&channel=${encodeURIComponent(channel)}`, true);
+      let normalizedCyan = cyanChatUrl.trim();
+      if (normalizedCyan && !normalizedCyan.startsWith('http://') && !normalizedCyan.startsWith('https://')) {
+        normalizedCyan = `https://${normalizedCyan}`;
+      }
+      const cyanParam = normalizedCyan ? `&cyanUrl=${encodeURIComponent(normalizedCyan)}` : '';
+      window.streamforger?.overlay.open(`${baseUrl}/overlay.html?mode=cyanchat&channel=${encodeURIComponent(channel)}${cyanParam}`, true);
       setIsOpen(true);
-    } else if (mode === 'url' && customUrl) {
-      window.streamforger?.overlay.open(customUrl, true);
+    } else if (mode === 'url' && customUrl.trim()) {
+      window.streamforger?.overlay.open(customUrl.trim(), true);
       setIsOpen(true);
     } else if (mode === 'custom') {
       const gameParam = customGame ? `&game=${encodeURIComponent(customGame)}` : '';
-      const url = `http://localhost:3000/overlay.html?mode=custom&channel=${channel}${gameParam}`;
+      const url = `${baseUrl}/overlay.html?mode=custom&channel=${encodeURIComponent(channel)}${gameParam}`;
       window.streamforger?.overlay.open(url, true);
       setIsOpen(true);
     } else if (channel) {
@@ -91,7 +104,11 @@ export function TransparentOverlay({ channel }: Props) {
     setTimeout(() => clearInterval(interval), 120000);
   };
 
-  const canOpen = (mode === 'cyanchat' && channel) || (mode === 'url' && customUrl) || (mode === 'channel' && channel) || (mode === 'custom' && channel);
+  const canOpen =
+    (mode === 'cyanchat' && Boolean(channel || cyanChatUrl.trim())) ||
+    (mode === 'url' && Boolean(customUrl.trim())) ||
+    (mode === 'channel' && Boolean(channel)) ||
+    (mode === 'custom' && Boolean(channel));
 
   return (
     <div className={styles.container}>
@@ -150,12 +167,29 @@ export function TransparentOverlay({ channel }: Props) {
         </div>
 
         {mode === 'cyanchat' ? (
-          <div className={styles.cyanHint}>
-            <p className={styles.cyanHintText}>
-              Abre Cyan Chat como ventana transparente. La URL se configura desde{' '}
-              <a href="https://chat.johnnycyan.com/" target="_blank" rel="noreferrer" className={styles.cyanLink}>chat.johnnycyan.com</a>
-              {' '}y se guarda automáticamente.
-            </p>
+          <div className={styles.urlInputWrap}>
+            <label className={styles.urlLabel}>
+              {t('chat.cyanUrl')}
+            </label>
+            <input
+              id="overlay-cyanchat-url"
+              type="url"
+              value={cyanChatUrl}
+              onChange={(e) => {
+                setCyanChatUrl(e.target.value);
+                localStorage.setItem('cyanChatUrl', e.target.value);
+              }}
+              placeholder="https://chat.johnnycyan.com/chat.html?channel=..."
+              className="sf-input"
+              style={{ marginBottom: '0.6rem', fontFamily: 'monospace', fontSize: '0.8rem' }}
+            />
+            <div className={styles.cyanHint}>
+              <p className={styles.cyanHintText}>
+                Abre Cyan Chat como ventana transparente con soporte TTS y YouTube multistream. Configura tu estilo en{' '}
+                <a href="https://chat.johnnycyan.com/" target="_blank" rel="noreferrer" className={styles.cyanLink}>chat.johnnycyan.com</a>
+                {' '}y pega aquí tu URL generada.
+              </p>
+            </div>
           </div>
         ) : mode === 'url' ? (
           <div className={styles.urlInputWrap}>

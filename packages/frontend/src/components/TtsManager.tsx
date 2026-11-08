@@ -5,33 +5,49 @@ import { speak, cancelAll } from '../utils/tts';
 
 interface ChatMsg {
   id: string;
-  user: { id: string; displayName: string; color: string; badges: string[] };
+  platform?: 'twitch' | 'youtube';
+  isHistory?: boolean;
+  user: { id: string; username?: string; displayName: string; color: string; badges: string[] };
   text: string;
   timestamp: number;
 }
 
-function shouldSkip(msg: ChatMsg, currentUserId: string | null, filters: { excludeOwn: boolean; excludeLinks: boolean; excludeBots: boolean; botNames: string }) {
-  if (filters.excludeOwn && currentUserId && msg.user.id === currentUserId) return true;
+function shouldSkip(
+  msg: ChatMsg,
+  currentUserId: string | null,
+  filters: { excludeOwn: boolean; excludeLinks: boolean; excludeBots: boolean; botNames: string },
+) {
+  if (msg.isHistory) return true;
+  if (!msg.text || msg.text.trim().startsWith('!')) return true;
+  if (
+    filters.excludeOwn &&
+    (msg.user.badges?.includes('broadcaster') || (currentUserId && msg.user.id === currentUserId))
+  ) {
+    return true;
+  }
   if (filters.excludeLinks && /https?:\/\//i.test(msg.text)) return true;
   if (filters.excludeBots && filters.botNames) {
     const names = filters.botNames.split(',').map((n) => n.trim().toLowerCase()).filter(Boolean);
-    if (names.includes(msg.user.displayName.toLowerCase())) return true;
+    const disp = (msg.user.displayName || '').toLowerCase();
+    const uname = (msg.user.username || '').toLowerCase();
+    if (names.includes(disp) || (uname && names.includes(uname))) return true;
   }
   return false;
 }
 
-const DEDUP_WINDOW = 10;
+const DEDUP_WINDOW = 30;
 
 export function TtsManager() {
   const { enabled, voiceURI, rate, volume, engine, piperLang, filters, currentUserId } = useTts();
-  const recentTextsRef = useRef<string[]>([]);
+  const recentIdsRef = useRef<string[]>([]);
 
   useSocketEvent('chat:message', useCallback((msg: ChatMsg) => {
     if (!enabled) return;
-    if (recentTextsRef.current.includes(msg.text)) return;
+    const dedupKey = msg.id || `${msg.user?.displayName}:${msg.text}:${msg.timestamp}`;
+    if (recentIdsRef.current.includes(dedupKey)) return;
     if (shouldSkip(msg, currentUserId, filters)) return;
-    recentTextsRef.current.push(msg.text);
-    if (recentTextsRef.current.length > DEDUP_WINDOW) recentTextsRef.current.shift();
+    recentIdsRef.current.push(dedupKey);
+    if (recentIdsRef.current.length > DEDUP_WINDOW) recentIdsRef.current.shift();
     const textToSpeak = filters.readAuthor ? `${msg.user.displayName}: ${msg.text}` : msg.text;
     speak(textToSpeak, voiceURI, rate, volume, engine, piperLang);
   }, [enabled, voiceURI, rate, volume, engine, piperLang, filters, currentUserId]));

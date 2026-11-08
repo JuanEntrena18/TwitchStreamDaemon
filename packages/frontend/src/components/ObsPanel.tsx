@@ -412,12 +412,7 @@ export function ObsPanel({ channel }: Props) {
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>(DEFAULT_SOCIAL_LINKS);
   const [endScreenSocials, setEndScreenSocials] = useState<EndScreenSocial[]>(END_SCREEN_SOCIALS_INIT);
   const [endSocialExpanded, setEndSocialExpanded] = useState<string | null>(null);
-  const [fnExpandedMap, setFnExpandedMap] = useState<Record<string, boolean>>({
-    fortnite: true,
-    'fortnite-hud-api': true,
-    'wow-forever': true,
-    'valorant-protocol': true,
-  });
+  const [fnExpandedMap, setFnExpandedMap] = useState<Record<string, boolean>>({});
   const [fnHiddenLayersMap, setFnHiddenLayersMap] = useState<Record<string, string[]>>({});
   const overlayBaseUrl = import.meta.env.DEV ? 'http://localhost:5173' : window.location.origin;
 
@@ -431,6 +426,8 @@ export function ObsPanel({ channel }: Props) {
   const [fnStatsMode, setFnStatsMode] = useState('overall');
   const [fnLayout, setFnLayout] = useState('stats');
   const [fnSaved, setFnSaved] = useState(false);
+  const [fnBusy, setFnBusy] = useState(false);
+  const [fnStatusMsg, setFnStatusMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [wowMode, setWowMode] = useState<'raiderio' | 'manual'>('manual');
   const [wowRegion, setWowRegion] = useState<'eu' | 'us' | 'kr' | 'tw'>('eu');
@@ -519,7 +516,7 @@ export function ObsPanel({ channel }: Props) {
       let url = `${overlayBaseUrl}/overlays/${ov.filename}`;
       url += `?channel=${channel}`;
       url += `&backend=${encodeURIComponent(be)}`;
-      if ((ov.mode === 'fortnite' || ov.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
+      if ((ov.mode === 'fortnite' || ov.mode === 'fortnite-hud-api' || ov.mode === 'fortnite-vertical') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
       if (MODULAR_OVERLAY_IDS.has(ov.id) && hiddenForOv.length > 0) url += `&hide=${encodeURIComponent(hiddenForOv.join(','))}`;
       if (ov.mode.endsWith('-end') && socialsParam) url += `&socials=${socialsParam}`;
       return url;
@@ -608,13 +605,43 @@ export function ObsPanel({ channel }: Props) {
   }, [channel, overlayBaseUrl, selectedTheme, fnEpicUsername, fnStatsMode, fnLayout, fnHiddenLayersMap, endScreenSocials, toast, t]);
 
   const saveFnConfig = async () => {
-    const body: { epicUsername: string; statsMode: string; layout: string; apiKey?: string } = { epicUsername: fnEpicUsername, statsMode: fnStatsMode, layout: fnLayout };
-    if (fnApiKey) body.apiKey = fnApiKey;
-    await apiPut('/fortnite/config', body);
-    setFnSaved(true);
-    if (fnApiKey) { setFnHasKey(true); setFnApiKey(''); setFnEditingKey(false); }
-    toast.success(t('obs.guardadoConfig'));
-    setTimeout(() => setFnSaved(false), 3000);
+    setFnBusy(true);
+    setFnStatusMsg(null);
+    try {
+      const body: { epicUsername: string; statsMode: string; layout: string; apiKey?: string } = {
+        epicUsername: fnEpicUsername.trim(),
+        statsMode: fnStatsMode,
+        layout: fnLayout,
+      };
+      if (fnApiKey.trim()) body.apiKey = fnApiKey.trim();
+      const r = await apiPut('/fortnite/config', body);
+      const data = await r.json().catch(() => ({}));
+      setFnSaved(true);
+      if (fnApiKey.trim()) {
+        setFnHasKey(true);
+        setFnApiKey('');
+        setFnEditingKey(false);
+      }
+      if (data.statsError) {
+        setFnStatusMsg({ type: 'err', text: `Guardado, pero Fortnite-API respondió: ${data.statsError}` });
+      } else if (data.stats) {
+        setFnStatusMsg({
+          type: 'ok',
+          text: `✓ Conectado a Fortnite-API (${fnEpicUsername.trim()} · ${String(data.stats.mode || fnStatsMode).toUpperCase()}): ${data.stats.wins ?? 0} Victorias · ${data.stats.kills ?? 0} Kills · K/D ${Number(data.stats.kd ?? 0).toFixed(2)} · Win Rate ${Number(data.stats.winRate ?? 0).toFixed(1)}%`,
+        });
+      } else {
+        setFnStatusMsg({
+          type: 'ok',
+          text: '✓ Configuración guardada y sincronizada con Fortnite HUD Táctico, Fortnite Gameplay Cartoon y Fortnite Vertical.',
+        });
+      }
+      toast.success(t('obs.guardadoConfig'));
+      setTimeout(() => setFnSaved(false), 3000);
+    } catch (err) {
+      setFnStatusMsg({ type: 'err', text: err instanceof Error ? err.message : 'Error de red' });
+    } finally {
+      setFnBusy(false);
+    }
   };
 
   const saveWowConfig = async () => {
@@ -693,7 +720,7 @@ export function ObsPanel({ channel }: Props) {
     if (standalone) {
       let url = `${overlayBaseUrl}/overlays/${standalone}`;
       if (channel) url += `?channel=${channel}`;
-      if ((item.mode === 'fortnite' || item.mode === 'fortnite-hud-api') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
+      if ((item.mode === 'fortnite' || item.mode === 'fortnite-hud-api' || item.mode === 'fortnite-vertical') && fnEpicUsername) url += `&epic=${encodeURIComponent(fnEpicUsername)}&mode=${fnStatsMode}&layout=${fnLayout}`;
       if (MODULAR_OVERLAY_IDS.has(item.id) && hiddenForItem.length > 0) url += `&hide=${encodeURIComponent(hiddenForItem.join(','))}`;
       const be = BACKEND_URL;
       url += `${channel ? '&' : '?'}backend=${encodeURIComponent(be)}`;
@@ -902,7 +929,9 @@ export function ObsPanel({ channel }: Props) {
                 <div className={styles.expandContentFn}>
                   <div className={styles.fnModulesHeader}>
                     <div>
-                      <p className={styles.sectionTitleFn}>{t('obs.fnModulesTitle')}</p>
+                      <p className={styles.sectionTitleFn}>
+                        Componentes Modulares para OBS · {cleanLabel(t(item.labelKey))}
+                      </p>
                       <p className={styles.fnModulesDesc}>{t('obs.fnModulesDesc')}</p>
                     </div>
                     <button
@@ -1391,11 +1420,28 @@ export function ObsPanel({ channel }: Props) {
 
           <div className={styles.fnFooter}>
             <div className="flex-row flex-row--gap-md">
-              <button type="button" onClick={saveFnConfig} className={`sf-btn sf-btn-primary ${styles.fnSaveBtn}`}>
-                {t('obs.guardarConfig')}
+              <button
+                type="button"
+                onClick={saveFnConfig}
+                disabled={fnBusy}
+                className={`sf-btn sf-btn-primary ${styles.fnSaveBtn}`}
+              >
+                {fnBusy ? 'Verificando API…' : t('obs.guardarConfig')}
               </button>
               {fnSaved && <span className={styles.fnSavedText}>✓ {cleanLabel(t('obs.guardadoConfig'))}</span>}
             </div>
+            {fnStatusMsg && (
+              <p
+                style={{
+                  marginTop: '0.55rem',
+                  marginBottom: 0,
+                  fontSize: '0.76rem',
+                  color: fnStatusMsg.type === 'ok' ? 'var(--sf-success, #10b981)' : '#f87171',
+                }}
+              >
+                {fnStatusMsg.text}
+              </p>
+            )}
           </div>
         </div>
       )}
