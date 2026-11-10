@@ -333,7 +333,7 @@ export interface SubathonAction {
   tier?: string;
 }
 
-export interface ViewerSnapshot {
+export interface ViewerSnapshot { twitchViewers?: number; youtubeViewers?: number; twitchMessagesPerMin?: number; youtubeMessagesPerMin?: number;
   timestamp: number;
   viewers: number;
   chattersActive: number;
@@ -375,7 +375,56 @@ export interface StreamAvatarState {
   audioDeviceId: string | null;
 }
 
+export interface KpiVideoArchiveItem {
+  id: string;
+  platform: 'twitch' | 'youtube';
+  title: string;
+  categoryName: string;
+  publishedAt: string;
+  durationSeconds: number;
+  views: number;
+  likes?: number;
+  comments?: number;
+  peakConcurrentViewers?: number;
+  thumbnailUrl?: string;
+  url: string;
+  isLiveArchive?: boolean;
+}
+
 export interface KpiOverview {
+  platform?: 'multi' | 'twitch' | 'youtube';
+  youtubeSubscribers?: number;
+  youtubeTotalChannelViews?: number;
+  youtubeVideoCount?: number;
+  totalLikes?: number;
+  totalComments?: number;
+  engagementRate?: number;
+  totalLikesDelta?: number;
+  totalCommentsDelta?: number;
+  platformBreakdown?: {
+    twitch?: {
+      followers: number;
+      subscribers: number;
+      totalViews: number;
+      streams: number;
+      hours: number;
+      avgViewers: number;
+      peakViewers: number;
+    };
+    youtube?: {
+      subscribers: number;
+      totalChannelViews: number;
+      videoCount: number;
+      periodViews: number;
+      periodLikes: number;
+      periodComments: number;
+      videos: number;
+      hours: number;
+      avgViews: number;
+      peakViews: number;
+    };
+  };
+  recentArchives?: KpiVideoArchiveItem[];
   channel: string;
   followers: number;
   subscribers: number;
@@ -402,7 +451,7 @@ export interface KpiOverview {
   streamsThisPeriodDelta?: number;
 }
 
-export interface GamePerformance {
+export interface GamePerformance { platform?: 'twitch' | 'youtube' | 'multi'; totalLikes?: number; totalComments?: number;
   gameName: string;
   boxArtUrl?: string;
   streamCount: number;
@@ -413,7 +462,7 @@ export interface GamePerformance {
   avgDuration: number;
 }
 
-export interface BestSlot {
+export interface BestSlot { platform?: 'twitch' | 'youtube' | 'multi'; totalViews?: number;
   dayOfWeek: number;
   hourStart: number;
   avgViewers: number;
@@ -427,24 +476,24 @@ export interface ChannelRaidEvent { platform?: StreamPlatform;
   timestamp: number;
 }
 
-export interface TwitchTopGame {
+export interface TwitchTopGame { platform?: 'twitch' | 'youtube'; activeStreamsCount?: number; topChannelName?: string;
   id: string;
   name: string;
   boxArtUrl: string;
   estimatedViewers: number;
 }
 
-export interface ChatStats {
+export interface ChatStats { twitchMessages?: number; youtubeMessages?: number;
   avgMessagesPerMin: number;
   peakMessagesPerMin: number;
   totalMessages: number;
   uniqueChatters: number;
   avgEngagementRatio: number;
-  topChatters: { user: string; messageCount: number }[];
-  timeline: { timestamp: number; messagesPerMin: number; engagement: number }[];
+  topChatters: { user: string; messageCount: number; platform?: 'twitch' | 'youtube' }[];
+  timeline: { timestamp: number; messagesPerMin: number; twitchMessagesPerMin?: number; youtubeMessagesPerMin?: number; engagement: number }[];
 }
 
-export interface StreamSummary {
+export interface StreamSummary { id?: string; platform?: 'twitch' | 'youtube'; thumbnailUrl?: string; url?: string; likes?: number; comments?: number;
   channel: string;
   streamTitle: string;
   gameName: string;
@@ -468,7 +517,7 @@ export interface StreamSummary {
   durationVsAvg?: number;
 }
 
-export interface ChannelRecord {
+export interface ChannelRecord { platform?: 'twitch' | 'youtube' | 'multi'; url?: string; subtitle?: string;
   label: string;
   value: number | string;
   streamTitle?: string;

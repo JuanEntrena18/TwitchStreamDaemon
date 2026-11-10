@@ -2,14 +2,26 @@ import { FastifyInstance } from 'fastify';
 import { ApiClient } from '@twurple/api';
 import { getRawData } from '@twurple/common';
 import { authProvider, currentUser } from '../auth/index.js';
-import { getIO } from '../socket/index.js';
+import {
+  fetchYouTubeChannelAnalytics,
+  fetchYouTubeTopGamingTrends,
+} from '../youtube/index.js';
 import { getEvents } from '../activity/index.js';
-import type { ViewerSnapshot, KpiOverview, GamePerformance, BestSlot, ChatStats, StreamSummary, ChannelRecord } from '@streamdaemon/shared';
+import type {
+  ViewerSnapshot,
+  KpiOverview,
+  KpiVideoArchiveItem,
+  GamePerformance,
+  BestSlot,
+  ChatStats,
+  StreamSummary,
+  ChannelRecord,
+  TwitchTopGame,
+} from '@streamdaemon/shared';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { updateSessionViewers, restoreActiveSessions } from './session.js';
-import { prisma } from '../auth/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../data');
@@ -19,35 +31,82 @@ const MAX_SNAPSHOTS = 120;
 let snapshots = new Map<string, ViewerSnapshot[]>();
 
 const chatMessageCount = new Map<string, number>();
+const twitchChatMessageCount = new Map<string, number>();
+const youtubeChatMessageCount = new Map<string, number>();
+const cumulativePlatformMsgs = new Map<string, { twitch: number; youtube: number }>();
 const uniqueChattersSet = new Map<string, Set<string>>();
+const topChattersMap = new Map<
+  string,
+  Map<string, { count: number; platform: 'twitch' | 'youtube' }>
+>();
 let chatMessageInterval: ReturnType<typeof setInterval> | null = null;
 
 export function resetChatCounter(channel: string) {
-  chatMessageCount.set(channel, 0);
-  if (!uniqueChattersSet.has(channel)) {
-    uniqueChattersSet.set(channel, new Set());
+  const key = (channel || 'global').toLowerCase();
+  chatMessageCount.set(key, 0);
+  twitchChatMessageCount.set(key, 0);
+  youtubeChatMessageCount.set(key, 0);
+  if (!uniqueChattersSet.has(key)) {
+    uniqueChattersSet.set(key, new Set());
   } else {
-    uniqueChattersSet.get(channel)!.clear();
+    uniqueChattersSet.get(key)!.clear();
   }
 }
 
-export function incrementChatCounter(channel: string, user?: string) {
-  const currentCount = chatMessageCount.get(channel) || 0;
-  chatMessageCount.set(channel, currentCount + 1);
+export function incrementChatCounter(
+  channel: string,
+  user?: string,
+  platform: 'twitch' | 'youtube' = 'twitch',
+) {
+  const key = (channel || 'global').toLowerCase();
+  chatMessageCount.set(key, (chatMessageCount.get(key) || 0) + 1);
+  if (platform === 'youtube') {
+    youtubeChatMessageCount.set(key, (youtubeChatMessageCount.get(key) || 0) + 1);
+  } else {
+    twitchChatMessageCount.set(key, (twitchChatMessageCount.get(key) || 0) + 1);
+  }
+
+  const cum = cumulativePlatformMsgs.get(key) || { twitch: 0, youtube: 0 };
+  if (platform === 'youtube') cum.youtube += 1;
+  else cum.twitch += 1;
+  cumulativePlatformMsgs.set(key, cum);
+
   if (user) {
-    if (!uniqueChattersSet.has(channel)) {
-      uniqueChattersSet.set(channel, new Set());
+    if (!uniqueChattersSet.has(key)) {
+      uniqueChattersSet.set(key, new Set());
     }
-    uniqueChattersSet.get(channel)!.add(user);
+    uniqueChattersSet.get(key)!.add(user);
+
+    if (!topChattersMap.has(key)) {
+      topChattersMap.set(key, new Map());
+    }
+    const chMap = topChattersMap.get(key)!;
+    const prev = chMap.get(user);
+    chMap.set(user, {
+      count: (prev?.count || 0) + 1,
+      platform: prev?.platform || platform,
+    });
   }
 }
 
 export function getChatMessagesPerMinute(channel: string): number {
-  return chatMessageCount.get(channel) || 0;
+  const key = (channel || 'global').toLowerCase();
+  let total = chatMessageCount.get(key) || 0;
+  if (total === 0) {
+    for (const v of chatMessageCount.values()) total += v;
+  }
+  return total;
 }
 
 export function getUniqueChattersCount(channel: string): number {
-  return uniqueChattersSet.get(channel)?.size || 0;
+  const key = (channel || 'global').toLowerCase();
+  const merged = new Set<string>();
+  const direct = uniqueChattersSet.get(key);
+  if (direct) direct.forEach((u) => merged.add(u));
+  for (const s of uniqueChattersSet.values()) {
+    s.forEach((u) => merged.add(u));
+  }
+  return merged.size;
 }
 
 function loadSnapshots() {
@@ -71,20 +130,36 @@ function saveSnapshots() {
   }
 }
 
-export function recordSnapshot(channel: string, viewers: number, chattersActive: number) {
-  const normChannel = channel.toLowerCase();
+export function recordSnapshot(
+  channel: string,
+  viewers: number,
+  chattersActive: number,
+  twitchViewers?: number,
+  youtubeViewers?: number,
+) {
+  const normChannel = (channel || 'global').toLowerCase();
   if (!snapshots.has(normChannel)) snapshots.set(normChannel, []);
   const list = snapshots.get(normChannel)!;
-  
-  const messagesPerMin = getChatMessagesPerMinute(normChannel);
+
+  let twMsgs = twitchChatMessageCount.get(normChannel) || 0;
+  let ytMsgs = youtubeChatMessageCount.get(normChannel) || 0;
+  if (twMsgs === 0 && ytMsgs === 0) {
+    for (const v of twitchChatMessageCount.values()) twMsgs += v;
+    for (const v of youtubeChatMessageCount.values()) ytMsgs += v;
+  }
+  const messagesPerMin = twMsgs + ytMsgs;
   const uniqueChatters = getUniqueChattersCount(normChannel);
 
-  list.push({ 
-    timestamp: Date.now(), 
-    viewers, 
-    chattersActive,
+  list.push({
+    timestamp: Date.now(),
+    viewers,
+    twitchViewers: twitchViewers ?? viewers,
+    youtubeViewers: youtubeViewers ?? 0,
+    chattersActive: Math.max(chattersActive, uniqueChatters),
     messagesPerMin,
-    uniqueChatters
+    twitchMessagesPerMin: twMsgs,
+    youtubeMessagesPerMin: ytMsgs,
+    uniqueChatters,
   });
 
   while (list.length > MAX_SNAPSHOTS) list.shift();
@@ -96,26 +171,41 @@ export function recordSnapshot(channel: string, viewers: number, chattersActive:
 }
 
 function getChannelSnapshots(channel: string): ViewerSnapshot[] {
-  return snapshots.get(channel) ?? [];
+  const norm = (channel || 'global').toLowerCase();
+  const direct = snapshots.get(norm);
+  if (direct && direct.length > 0) return direct;
+
+  // Fallback: merge all recorded channel buckets in this local single-streamer instance
+  const all: ViewerSnapshot[] = [];
+  for (const list of snapshots.values()) {
+    all.push(...list);
+  }
+  return all.sort((a, b) => a.timestamp - b.timestamp).slice(-MAX_SNAPSHOTS);
 }
 
 const VALID_PERIODS = ['7d', '30d', '90d', 'all'] as const;
-type Period = typeof VALID_PERIODS[number];
+type Period = (typeof VALID_PERIODS)[number];
+type PlatformFilter = 'multi' | 'twitch' | 'youtube';
 
-function parsePeriod(p: string): Period {
-  return VALID_PERIODS.includes(p as Period) ? p as Period : '7d';
+function parsePeriod(p?: string): Period {
+  return VALID_PERIODS.includes(p as Period) ? (p as Period) : '30d';
+}
+
+function parsePlatform(p?: string): PlatformFilter {
+  if (p === 'twitch' || p === 'youtube' || p === 'multi') return p;
+  return 'multi';
 }
 
 function getStartDate(period: Period): Date | undefined {
   if (period === 'all') return undefined;
-  const days = parseInt(period);
+  const days = parseInt(period, 10);
   return new Date(Date.now() - days * 86400000);
 }
 
 function getPreviousPeriodStartDate(period: Period): Date | undefined {
   if (period === 'all') return undefined;
-  const days = parseInt(period);
-  return new Date(Date.now() - (days * 2) * 86400000);
+  const days = parseInt(period, 10);
+  return new Date(Date.now() - days * 2 * 86400000);
 }
 
 function calculateDelta(current: number, previous: number): number | undefined {
@@ -123,105 +213,259 @@ function calculateDelta(current: number, previous: number): number | undefined {
   return Math.round(((current - previous) / previous) * 100);
 }
 
+async function resolveTwitchUser(channel: string) {
+  if (!authProvider) return null;
+  try {
+    const apiClient = new ApiClient({ authProvider });
+    const clean = String(channel || '')
+      .trim()
+      .replace(/^[@#]/, '')
+      .toLowerCase();
+    const user =
+      (clean && /^[a-z0-9_]{2,25}$/.test(clean)
+        ? await apiClient.users.getUserByName(clean).catch(() => null)
+        : null) ??
+      (currentUser?.login
+        ? await apiClient.users.getUserByName(currentUser.login).catch(() => null)
+        : null);
+    if (!user) return null;
+    return { apiClient, user };
+  } catch {
+    return null;
+  }
+}
+
 export function setupKpi(app: FastifyInstance) {
   loadSnapshots();
   restoreActiveSessions();
 
   if (!chatMessageInterval) {
-    chatMessageInterval = setInterval(() => { 
-      chatMessageCount.clear(); 
-      // Do not clear uniqueChattersSet, we want cumulative unique chatters for the session
+    chatMessageInterval = setInterval(() => {
+      chatMessageCount.clear();
+      twitchChatMessageCount.clear();
+      youtubeChatMessageCount.clear();
     }, 60000);
   }
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     1. OVERVIEW KPI (Multi-Platform: Twitch + YouTube Live)
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/overview/:channel', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
       const { channel } = req.params as { channel: string };
-      const { period: periodStr } = req.query as { period?: string };
+      const { period: periodStr, platform: platStr } = req.query as {
+        period?: string;
+        platform?: string;
+      };
       const period = parsePeriod(periodStr || '30d');
-
-      const apiClient = new ApiClient({ authProvider });
-      const user = await apiClient.users.getUserByName(channel);
-      if (!user) return reply.status(404).send({ error: 'Channel not found' });
+      const platform = parsePlatform(platStr);
 
       const startDate = getStartDate(period);
       const prevStartDate = getPreviousPeriodStartDate(period);
 
-      const [followInfo, subInfo, videos] = await Promise.all([
-        apiClient.channels.getChannelFollowers(user.id, user.id).catch(() => ({ total: 0 })),
-        apiClient.subscriptions.getSubscriptions(user.id).catch(() => ({ total: 0 })),
-        apiClient.videos.getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 100 }).catch(() => ({ data: [] })),
+      const includeTwitch = platform === 'multi' || platform === 'twitch';
+      const includeYouTube = platform === 'multi' || platform === 'youtube';
+
+      const [twResolved, ytAnalytics] = await Promise.all([
+        includeTwitch ? resolveTwitchUser(channel) : Promise.resolve(null),
+        includeYouTube ? fetchYouTubeChannelAnalytics() : Promise.resolve(null),
       ]);
 
-      const events = getEvents(channel.toLowerCase());
+      // Twitch Data
+      let twFollowers = 0;
+      let twSubs = 0;
+      const twArchives: KpiVideoArchiveItem[] = [];
 
-      const processVideos = (start?: Date, end?: Date) => {
-        const filtered = videos.data.filter(v => {
-          if (start && v.creationDate < start) return false;
-          if (end && v.creationDate >= end) return false;
+      if (twResolved) {
+        const { apiClient, user } = twResolved;
+        const [followInfo, subInfo, videos] = await Promise.all([
+          apiClient.channels.getChannelFollowers(user.id, user.id).catch(() => ({ total: 0 })),
+          apiClient.subscriptions.getSubscriptions(user.id).catch(() => ({ total: 0 })),
+          apiClient.videos
+            .getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 60 })
+            .catch(() => ({ data: [] })),
+        ]);
+        twFollowers = followInfo.total;
+        twSubs = subInfo.total;
+
+        for (const v of videos.data) {
+          const raw = getRawData(v) as unknown as Record<string, unknown>;
+          const gameName = String(raw.game_name || 'Twitch Stream');
+          twArchives.push({
+            id: v.id,
+            platform: 'twitch',
+            title: v.title,
+            categoryName: gameName,
+            publishedAt: v.creationDate.toISOString(),
+            durationSeconds: v.durationInSeconds,
+            views: v.views,
+            peakConcurrentViewers: v.views,
+            thumbnailUrl: v.thumbnailUrl
+              ? v.thumbnailUrl.replace('%{width}', '320').replace('%{height}', '180')
+              : undefined,
+            url: v.url || `https://www.twitch.tv/videos/${v.id}`,
+            isLiveArchive: true,
+          });
+        }
+      }
+
+      // YouTube Data
+      const ytSubscribers = ytAnalytics?.subscribers ?? 0;
+      const ytTotalChannelViews = ytAnalytics?.totalChannelViews ?? 0;
+      const ytVideoCount = ytAnalytics?.videoCount ?? 0;
+      const ytArchives: KpiVideoArchiveItem[] = ytAnalytics?.archives ?? [];
+
+      const allEvents = getEvents(channel.toLowerCase());
+      const scopedEvents = allEvents.filter((e) => {
+        const ep = e.platform || 'twitch';
+        if (platform === 'twitch') return ep === 'twitch';
+        if (platform === 'youtube') return ep === 'youtube';
+        return true;
+      });
+
+      const computeWindowMetrics = (items: KpiVideoArchiveItem[], start?: Date, end?: Date) => {
+        const filtered = items.filter((item) => {
+          const d = new Date(item.publishedAt);
+          if (start && d < start) return false;
+          if (end && d >= end) return false;
           return true;
         });
 
-        let tHours = 0, tViews = 0, pViewers = 0;
-        let fGained = 0, sGained = 0, bDonated = 0;
+        let hours = 0;
+        let views = 0;
+        let peak = 0;
+        let likes = 0;
+        let comments = 0;
 
-        for (const video of filtered) {
-          tHours += video.durationInSeconds / 3600;
-          tViews += video.views;
-          pViewers = Math.max(pViewers, video.views);
-
-          const startTime = video.creationDate.getTime();
-          const endTime = startTime + video.durationInSeconds * 1000;
-          const streamEvents = events.filter(e => e.timestamp >= startTime && e.timestamp <= endTime);
-
-          fGained += streamEvents.filter(e => e.type === 'follow').length;
-          sGained += streamEvents.filter(e => e.type === 'sub' || e.type === 'resub' || e.type === 'gift').length;
-          bDonated += streamEvents.filter(e => e.type === 'cheer').reduce((sum, e) => sum + (e.amount || 0), 0);
+        for (const item of filtered) {
+          hours += (item.durationSeconds || 0) / 3600;
+          views += item.views || 0;
+          peak = Math.max(peak, item.peakConcurrentViewers || item.views || 0);
+          likes += item.likes || 0;
+          comments += item.comments || 0;
         }
 
-        const aViewers = filtered.length > 0 ? tViews / filtered.length : 0;
-        const eRevenue = sGained * 2.49 + bDonated * 0.01;
+        const winEvents = scopedEvents.filter((e) => {
+          if (start && e.timestamp < start.getTime()) return false;
+          if (end && e.timestamp >= end.getTime()) return false;
+          return true;
+        });
+
+        const fGained = winEvents.filter((e) => e.type === 'follow').length;
+        const sGained = winEvents.filter(
+          (e) => e.type === 'sub' || e.type === 'resub' || e.type === 'gift',
+        ).length;
+        const bDonated = winEvents
+          .filter((e) => e.type === 'cheer')
+          .reduce((sum, e) => sum + (e.amount || 0), 0);
+
+        const avgViewers = filtered.length > 0 ? Math.round(views / filtered.length) : 0;
+        const estimatedRevenue = Math.round((sGained * 2.49 + bDonated * 0.01) * 100) / 100;
 
         return {
-          tHours, tViews, pViewers, fGained, sGained, bDonated, aViewers, eRevenue, streams: filtered.length
+          streams: filtered.length,
+          hours,
+          views,
+          peak,
+          likes,
+          comments,
+          avgViewers,
+          fGained,
+          sGained,
+          bDonated,
+          estimatedRevenue,
         };
       };
 
-      const curr = processVideos(startDate);
-      const prev = period !== 'all' ? processVideos(prevStartDate, startDate) : curr;
+      const activeArchives = [
+        ...(includeTwitch ? twArchives : []),
+        ...(includeYouTube ? ytArchives : []),
+      ].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-      const totalSubs = subInfo.total;
-      const totalFollowers = followInfo.total;
-      const subToFollowRatio = totalFollowers > 0 ? totalSubs / totalFollowers : 0;
+      const curr = computeWindowMetrics(activeArchives, startDate);
+      const prev =
+        period !== 'all' ? computeWindowMetrics(activeArchives, prevStartDate, startDate) : curr;
+
+      const twCurr = computeWindowMetrics(twArchives, startDate);
+      const ytCurr = computeWindowMetrics(ytArchives, startDate);
+
+      const combinedFollowers =
+        (includeTwitch ? twFollowers : 0) + (includeYouTube ? ytSubscribers : 0);
+      const combinedSubs = includeTwitch ? twSubs : 0;
+      const subToFollowRatio = combinedFollowers > 0 ? combinedSubs / combinedFollowers : 0;
+      const engagementRate =
+        curr.views > 0
+          ? Math.round(((curr.likes + curr.comments) / curr.views) * 1000) / 10
+          : 0;
 
       const overview: KpiOverview = {
         channel,
-        followers: totalFollowers,
-        subscribers: totalSubs,
+        platform,
+        followers: combinedFollowers,
+        subscribers: combinedSubs,
+        youtubeSubscribers: ytSubscribers,
+        youtubeTotalChannelViews: ytTotalChannelViews,
+        youtubeVideoCount: ytVideoCount,
         subToFollowRatio: Math.round(subToFollowRatio * 100) / 100,
-        avgViewers: Math.round(curr.aViewers),
-        peakViewers: curr.pViewers,
-        totalViews: curr.tViews,
-        totalHoursStreamed: Math.round(curr.tHours * 100) / 100,
+        avgViewers: curr.avgViewers,
+        peakViewers: curr.peak,
+        totalViews:
+          curr.views > 0
+            ? curr.views
+            : platform === 'youtube'
+              ? ytTotalChannelViews
+              : curr.views,
+        totalHoursStreamed: Math.round(curr.hours * 10) / 10,
         followersGained: curr.fGained,
         subsGained: curr.sGained,
         bitsDonated: curr.bDonated,
-        estimatedRevenue: Math.round(curr.eRevenue * 100) / 100,
+        estimatedRevenue: curr.estimatedRevenue,
         streamsThisPeriod: curr.streams,
-        isLive: false,
+        totalLikes: curr.likes,
+        totalComments: curr.comments,
+        engagementRate,
+        isLive: Boolean(ytAnalytics?.isLive),
+        platformBreakdown: {
+          twitch: {
+            followers: twFollowers,
+            subscribers: twSubs,
+            totalViews: twCurr.views,
+            streams: twCurr.streams,
+            hours: Math.round(twCurr.hours * 10) / 10,
+            avgViewers: twCurr.avgViewers,
+            peakViewers: twCurr.peak,
+          },
+          youtube: {
+            subscribers: ytSubscribers,
+            totalChannelViews: ytTotalChannelViews,
+            videoCount: ytVideoCount,
+            periodViews: ytCurr.views,
+            periodLikes: ytCurr.likes,
+            periodComments: ytCurr.comments,
+            videos: ytCurr.streams,
+            hours: Math.round(ytCurr.hours * 10) / 10,
+            avgViews: ytCurr.avgViewers,
+            peakViews: ytCurr.peak,
+          },
+        },
+        recentArchives: activeArchives.slice(0, 24),
       };
 
       if (period !== 'all') {
-        overview.avgViewersDelta = calculateDelta(Math.round(curr.aViewers), Math.round(prev.aViewers));
-        overview.peakViewersDelta = calculateDelta(curr.pViewers, prev.pViewers);
-        overview.totalViewsDelta = calculateDelta(curr.tViews, prev.tViews);
-        overview.totalHoursStreamedDelta = calculateDelta(curr.tHours, prev.tHours);
+        overview.avgViewersDelta = calculateDelta(curr.avgViewers, prev.avgViewers);
+        overview.peakViewersDelta = calculateDelta(curr.peak, prev.peak);
+        overview.totalViewsDelta = calculateDelta(curr.views, prev.views);
+        overview.totalHoursStreamedDelta = calculateDelta(curr.hours, prev.hours);
         overview.followersGainedDelta = calculateDelta(curr.fGained, prev.fGained);
         overview.subsGainedDelta = calculateDelta(curr.sGained, prev.sGained);
         overview.bitsDonatedDelta = calculateDelta(curr.bDonated, prev.bDonated);
-        overview.estimatedRevenueDelta = calculateDelta(curr.eRevenue, prev.eRevenue);
+        overview.estimatedRevenueDelta = calculateDelta(
+          curr.estimatedRevenue,
+          prev.estimatedRevenue,
+        );
         overview.streamsThisPeriodDelta = calculateDelta(curr.streams, prev.streams);
+        overview.totalLikesDelta = calculateDelta(curr.likes, prev.likes);
+        overview.totalCommentsDelta = calculateDelta(curr.comments, prev.comments);
       }
 
       return overview;
@@ -231,43 +475,88 @@ export function setupKpi(app: FastifyInstance) {
     }
   });
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     2. REAL-TIME VIEWERS & AUDIENCE HISTORY
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/viewers-history/:channel', async (req, reply) => {
     try {
       const { channel } = req.params as { channel: string };
-      const snapshots = getChannelSnapshots(channel.toLowerCase());
-      return { channel, snapshots, activeViewers: snapshots.length > 0 ? snapshots[snapshots.length - 1].viewers : 0 };
-    } catch (err) {
+      const list = getChannelSnapshots(channel.toLowerCase());
+      const last = list.length > 0 ? list[list.length - 1] : null;
+      return {
+        channel,
+        snapshots: list,
+        activeViewers: last?.viewers ?? 0,
+        twitchViewers: last?.twitchViewers ?? 0,
+        youtubeViewers: last?.youtubeViewers ?? 0,
+      };
+    } catch {
       return reply.status(500).send({ error: 'Failed to fetch viewer history' });
     }
   });
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     3. CHAT ANALYTICS & TOP CHATTERS (Twitch IRC + YouTube Live Chat)
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/chat-stats/:channel', async (req, reply) => {
     try {
       const { channel } = req.params as { channel: string };
-      const snapshots = getChannelSnapshots(channel.toLowerCase());
-      
+      const list = getChannelSnapshots(channel.toLowerCase());
+
+      // Merge top chatters across all buckets in this local session
+      const mergedTop = new Map<string, { count: number; platform: 'twitch' | 'youtube' }>();
+      for (const chMap of topChattersMap.values()) {
+        for (const [user, info] of chMap.entries()) {
+          const prev = mergedTop.get(user);
+          mergedTop.set(user, {
+            count: (prev?.count || 0) + info.count,
+            platform: prev?.platform || info.platform,
+          });
+        }
+      }
+
+      const topChatters = Array.from(mergedTop.entries())
+        .map(([user, info]) => ({
+          user,
+          messageCount: info.count,
+          platform: info.platform,
+        }))
+        .sort((a, b) => b.messageCount - a.messageCount)
+        .slice(0, 15);
+
+      let twitchMessages = 0;
+      let youtubeMessages = 0;
+      for (const c of cumulativePlatformMsgs.values()) {
+        twitchMessages += c.twitch;
+        youtubeMessages += c.youtube;
+      }
+
       const chatStats: ChatStats = {
         avgMessagesPerMin: 0,
         peakMessagesPerMin: 0,
-        totalMessages: 0,
-        uniqueChatters: 0,
+        totalMessages: twitchMessages + youtubeMessages,
+        twitchMessages,
+        youtubeMessages,
+        uniqueChatters: getUniqueChattersCount(channel),
         avgEngagementRatio: 0,
-        topChatters: [],
-        timeline: []
+        topChatters,
+        timeline: [],
       };
 
-      if (snapshots.length === 0) return chatStats;
+      if (list.length === 0) return chatStats;
 
       let totalEngagement = 0;
       let engagementCount = 0;
+      let snapshotMsgSum = 0;
 
-      for (const snap of snapshots) {
+      for (const snap of list) {
         const msgs = snap.messagesPerMin || 0;
-        chatStats.totalMessages += msgs; // Approximation since we poll every 15s
+        snapshotMsgSum += msgs;
         chatStats.peakMessagesPerMin = Math.max(chatStats.peakMessagesPerMin, msgs);
         chatStats.uniqueChatters = Math.max(chatStats.uniqueChatters, snap.uniqueChatters || 0);
-        
-        const engagement = snap.viewers > 0 ? ((snap.chattersActive || 0) / snap.viewers) * 100 : 0;
+
+        const engagement =
+          snap.viewers > 0 ? ((snap.chattersActive || 0) / snap.viewers) * 100 : 0;
         if (snap.viewers > 0) {
           totalEngagement += engagement;
           engagementCount++;
@@ -276,216 +565,457 @@ export function setupKpi(app: FastifyInstance) {
         chatStats.timeline.push({
           timestamp: snap.timestamp,
           messagesPerMin: msgs,
-          engagement: Math.round(engagement)
+          twitchMessagesPerMin: snap.twitchMessagesPerMin ?? msgs,
+          youtubeMessagesPerMin: snap.youtubeMessagesPerMin ?? 0,
+          engagement: Math.round(engagement),
         });
       }
 
-      chatStats.avgMessagesPerMin = Math.round(chatStats.totalMessages / Math.max(1, snapshots.length / 4)); // 15s intervals
-      chatStats.avgEngagementRatio = engagementCount > 0 ? Math.round(totalEngagement / engagementCount) : 0;
+      if (chatStats.totalMessages === 0) {
+        chatStats.totalMessages = snapshotMsgSum;
+      }
+      chatStats.avgMessagesPerMin = Math.round(snapshotMsgSum / Math.max(1, list.length));
+      chatStats.avgEngagementRatio =
+        engagementCount > 0 ? Math.round(totalEngagement / engagementCount) : 0;
 
       return chatStats;
-    } catch (err) {
+    } catch {
       return reply.status(500).send({ error: 'Failed to fetch chat stats' });
     }
   });
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     4. POST-STREAM REPORT & ARCHIVE INSPECTOR (Twitch VODs + YouTube Streams)
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/stream-summary/:channel', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
       const { channel } = req.params as { channel: string };
+      const { platform: platStr, videoId } = req.query as {
+        platform?: string;
+        videoId?: string;
+      };
+      const platform = parsePlatform(platStr);
+      const includeTwitch = platform === 'multi' || platform === 'twitch';
+      const includeYouTube = platform === 'multi' || platform === 'youtube';
 
-      const apiClient = new ApiClient({ authProvider });
-      const user = await apiClient.users.getUserByName(channel);
-      if (!user) return reply.status(404).send({ error: 'Channel not found' });
+      const [twResolved, ytAnalytics] = await Promise.all([
+        includeTwitch ? resolveTwitchUser(channel) : Promise.resolve(null),
+        includeYouTube ? fetchYouTubeChannelAnalytics() : Promise.resolve(null),
+      ]);
 
-      const videos = await apiClient.videos.getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 10 }).catch(() => ({ data: [] }));
-      
-      if (videos.data.length === 0) return reply.status(404).send({ error: 'No streams found' });
+      const archives: KpiVideoArchiveItem[] = [];
 
-      const lastVideo = videos.data[0];
+      if (twResolved) {
+        const videos = await twResolved.apiClient.videos
+          .getVideosByUser(twResolved.user.id, { type: 'archive', period: 'all', limit: 25 })
+          .catch(() => ({ data: [] }));
+        for (const v of videos.data) {
+          const raw = getRawData(v) as unknown as Record<string, unknown>;
+          archives.push({
+            id: v.id,
+            platform: 'twitch',
+            title: v.title,
+            categoryName: String(raw.game_name || 'Twitch Stream'),
+            publishedAt: v.creationDate.toISOString(),
+            durationSeconds: v.durationInSeconds,
+            views: v.views,
+            peakConcurrentViewers: v.views,
+            thumbnailUrl: v.thumbnailUrl
+              ? v.thumbnailUrl.replace('%{width}', '320').replace('%{height}', '180')
+              : undefined,
+            url: v.url || `https://www.twitch.tv/videos/${v.id}`,
+            isLiveArchive: true,
+          });
+        }
+      }
+
+      if (ytAnalytics?.archives?.length) {
+        archives.push(...ytAnalytics.archives);
+      }
+
+      archives.sort(
+        (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+      );
+
+      const target =
+        (videoId ? archives.find((a) => a.id === videoId) : null) || archives[0] || null;
+
+      if (!target) {
+        return reply.status(404).send({ error: 'No streams found', archives: [] });
+      }
+
       const events = getEvents(channel.toLowerCase());
-      const startTime = lastVideo.creationDate.getTime();
-      const endTime = startTime + lastVideo.durationInSeconds * 1000;
-      const streamEvents = events.filter(e => e.timestamp >= startTime && e.timestamp <= endTime);
+      const startTime = new Date(target.publishedAt).getTime();
+      const endTime = startTime + Math.max(target.durationSeconds, 3600) * 1000;
+      const streamEvents = events.filter(
+        (e) =>
+          e.timestamp >= startTime &&
+          e.timestamp <= endTime &&
+          (!e.platform || e.platform === target.platform),
+      );
 
-      const followersGained = streamEvents.filter(e => e.type === 'follow').length;
-      const subsGained = streamEvents.filter(e => e.type === 'sub' || e.type === 'resub' || e.type === 'gift').length;
-      const bitsDonated = streamEvents.filter(e => e.type === 'cheer').reduce((sum, e) => sum + (e.amount || 0), 0);
-      const estimatedRevenue = subsGained * 2.49 + bitsDonated * 0.01;
+      const followersGained = streamEvents.filter((e) => e.type === 'follow').length;
+      const subsGained = streamEvents.filter(
+        (e) => e.type === 'sub' || e.type === 'resub' || e.type === 'gift',
+      ).length;
+      const bitsDonated = streamEvents
+        .filter((e) => e.type === 'cheer')
+        .reduce((sum, e) => sum + (e.amount || 0), 0);
+      const estimatedRevenue = Math.round((subsGained * 2.49 + bitsDonated * 0.01) * 100) / 100;
 
-      const summary: StreamSummary = {
+      const avgHistoricalViews =
+        archives.length > 0
+          ? Math.round(archives.reduce((s, a) => s + a.views, 0) / archives.length)
+          : target.views;
+      const avgHistoricalDuration =
+        archives.length > 0
+          ? Math.round(archives.reduce((s, a) => s + a.durationSeconds, 0) / archives.length)
+          : target.durationSeconds;
+
+      const summary: StreamSummary & { archives?: KpiVideoArchiveItem[] } = {
+        id: target.id,
+        platform: target.platform,
         channel,
-        streamTitle: lastVideo.title,
-        gameName: 'Unknown Game', // Would need an extra API call or cached game
-        startedAt: lastVideo.creationDate.toISOString(),
-        duration: lastVideo.durationInSeconds,
-        avgViewers: 0, // Would come from Twitch API or snapshots if we kept them
-        peakViewers: lastVideo.views,
+        streamTitle: target.title,
+        gameName: target.categoryName,
+        startedAt: target.publishedAt,
+        duration: target.durationSeconds,
+        avgViewers: target.views,
+        peakViewers: target.peakConcurrentViewers || target.views,
         minViewers: 0,
-        peakTimestamp: 0,
+        peakTimestamp: startTime,
         avgChatters: 0,
-        avgEngagement: 0,
+        avgEngagement:
+          target.views > 0 && (target.likes || target.comments)
+            ? Math.round((((target.likes || 0) + (target.comments || 0)) / target.views) * 1000) /
+              10
+            : 0,
         followersGained,
         subsGained,
         bitsDonated,
         estimatedRevenue,
         totalChatMessages: 0,
-        uniqueChatters: 0
+        uniqueChatters: 0,
+        likes: target.likes ?? 0,
+        comments: target.comments ?? 0,
+        thumbnailUrl: target.thumbnailUrl,
+        url: target.url,
+        avgViewersVsAvg: calculateDelta(target.views, avgHistoricalViews),
+        durationVsAvg: calculateDelta(target.durationSeconds, avgHistoricalDuration),
+        archives: archives.slice(0, 30),
       };
 
       return summary;
-    } catch (err) {
+    } catch {
       return reply.status(500).send({ error: 'Failed to fetch stream summary' });
     }
   });
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     5. CHANNEL RECORDS (Twitch + YouTube Milestones)
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/records/:channel', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
       const { channel } = req.params as { channel: string };
+      const { platform: platStr } = req.query as { platform?: string };
+      const platform = parsePlatform(platStr);
+      const includeTwitch = platform === 'multi' || platform === 'twitch';
+      const includeYouTube = platform === 'multi' || platform === 'youtube';
 
-      const apiClient = new ApiClient({ authProvider });
-      const user = await apiClient.users.getUserByName(channel);
-      if (!user) return reply.status(404).send({ error: 'Channel not found' });
+      const [twResolved, ytAnalytics] = await Promise.all([
+        includeTwitch ? resolveTwitchUser(channel) : Promise.resolve(null),
+        includeYouTube ? fetchYouTubeChannelAnalytics() : Promise.resolve(null),
+      ]);
 
-      const videos = await apiClient.videos.getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 100 }).catch(() => ({ data: [] }));
-      
       const records: ChannelRecord[] = [];
 
-      if (videos.data.length > 0) {
-        let maxViewsVideo = videos.data[0];
-        let longestVideo = videos.data[0];
+      if (twResolved) {
+        const videos = await twResolved.apiClient.videos
+          .getVideosByUser(twResolved.user.id, { type: 'archive', period: 'all', limit: 100 })
+          .catch(() => ({ data: [] }));
 
-        for (const video of videos.data) {
-          if (video.views > maxViewsVideo.views) maxViewsVideo = video;
-          if (video.durationInSeconds > longestVideo.durationInSeconds) longestVideo = video;
+        if (videos.data.length > 0) {
+          let maxViewsVideo = videos.data[0];
+          let longestVideo = videos.data[0];
+
+          for (const video of videos.data) {
+            if (video.views > maxViewsVideo.views) maxViewsVideo = video;
+            if (video.durationInSeconds > longestVideo.durationInSeconds) longestVideo = video;
+          }
+
+          records.push({
+            platform: 'twitch',
+            label: 'Emisión con más visualizaciones (Twitch)',
+            value: maxViewsVideo.views.toLocaleString('es-ES'),
+            streamTitle: maxViewsVideo.title,
+            date: maxViewsVideo.creationDate.toISOString(),
+            url: maxViewsVideo.url || `https://www.twitch.tv/videos/${maxViewsVideo.id}`,
+            icon: '🟣',
+          });
+
+          const hours = Math.floor(longestVideo.durationInSeconds / 3600);
+          const minutes = Math.floor((longestVideo.durationInSeconds % 3600) / 60);
+
+          records.push({
+            platform: 'twitch',
+            label: 'Directo más largo en Twitch',
+            value: `${hours}h ${minutes}m`,
+            streamTitle: longestVideo.title,
+            date: longestVideo.creationDate.toISOString(),
+            url: longestVideo.url || `https://www.twitch.tv/videos/${longestVideo.id}`,
+            icon: '⏱️',
+          });
         }
+      }
 
+      if (ytAnalytics) {
         records.push({
-          label: 'Mayor pico de viewers',
-          value: maxViewsVideo.views.toLocaleString(),
-          streamTitle: maxViewsVideo.title,
-          date: maxViewsVideo.creationDate.toISOString(),
-          icon: '👥'
+          platform: 'youtube',
+          label: 'Visualizaciones históricas en YouTube',
+          value: ytAnalytics.totalChannelViews.toLocaleString('es-ES'),
+          streamTitle: `${ytAnalytics.displayName} · ${ytAnalytics.videoCount} vídeos publicados`,
+          icon: '🔴',
         });
 
-        const hours = Math.floor(longestVideo.durationInSeconds / 3600);
-        const minutes = Math.floor((longestVideo.durationInSeconds % 3600) / 60);
+        if (ytAnalytics.archives.length > 0) {
+          let topViewedYt = ytAnalytics.archives[0];
+          let topLikedYt = ytAnalytics.archives[0];
+          let topCommentedYt = ytAnalytics.archives[0];
+          let longestYt = ytAnalytics.archives[0];
 
-        records.push({
-          label: 'Stream más largo',
-          value: `${hours}h ${minutes}m`,
-          streamTitle: longestVideo.title,
-          date: longestVideo.creationDate.toISOString(),
-          icon: '⏱️'
-        });
+          for (const v of ytAnalytics.archives) {
+            if (v.views > topViewedYt.views) topViewedYt = v;
+            if ((v.likes || 0) > (topLikedYt.likes || 0)) topLikedYt = v;
+            if ((v.comments || 0) > (topCommentedYt.comments || 0)) topCommentedYt = v;
+            if (v.durationSeconds > longestYt.durationSeconds) longestYt = v;
+          }
+
+          records.push({
+            platform: 'youtube',
+            label: 'Vídeo / directo más visto en YouTube',
+            value: `${topViewedYt.views.toLocaleString('es-ES')} vistas`,
+            streamTitle: topViewedYt.title,
+            date: topViewedYt.publishedAt,
+            url: topViewedYt.url,
+            icon: '🔥',
+          });
+
+          if ((topLikedYt.likes || 0) > 0) {
+            records.push({
+              platform: 'youtube',
+              label: 'Récord de «Me gusta» en YouTube',
+              value: `${(topLikedYt.likes || 0).toLocaleString('es-ES')} likes`,
+              streamTitle: topLikedYt.title,
+              date: topLikedYt.publishedAt,
+              url: topLikedYt.url,
+              icon: '👍',
+            });
+          }
+
+          if ((topCommentedYt.comments || 0) > 0) {
+            records.push({
+              platform: 'youtube',
+              label: 'Mayor interacción de comentarios (YT)',
+              value: `${(topCommentedYt.comments || 0).toLocaleString('es-ES')} comentarios`,
+              streamTitle: topCommentedYt.title,
+              date: topCommentedYt.publishedAt,
+              url: topCommentedYt.url,
+              icon: '💬',
+            });
+          }
+
+          if (longestYt.durationSeconds > 0) {
+            const h = Math.floor(longestYt.durationSeconds / 3600);
+            const m = Math.floor((longestYt.durationSeconds % 3600) / 60);
+            records.push({
+              platform: 'youtube',
+              label: 'Emisión / contenido más extenso en YouTube',
+              value: h > 0 ? `${h}h ${m}m` : `${m}m`,
+              streamTitle: longestYt.title,
+              date: longestYt.publishedAt,
+              url: longestYt.url,
+              icon: '🎬',
+            });
+          }
+        }
       }
 
       return { channel, records };
-    } catch (err) {
+    } catch {
       return reply.status(500).send({ error: 'Failed to fetch channel records' });
     }
   });
 
-  async function fetchGamePerformance(apiClient: ApiClient, userId: string, channelLogin: string, startDate?: Date): Promise<GamePerformance[]> {
-    // 1) Try persisted GameStat first
-    const cached = await prisma.gameStat.findMany({
-      where: { userId, updatedAt: startDate ? { gte: startDate } : undefined },
-    });
-    if (cached.length > 0) {
-      return cached.map(g => ({
-        gameName: g.gameName,
-        boxArtUrl: g.boxArtUrl ?? undefined,
-        streamCount: g.streamCount,
-        totalViews: g.totalViews,
-        avgViewers: g.avgViewers,
-        maxViewers: g.maxViewers,
-        followersGained: g.followersGained,
-        avgDuration: g.avgDuration,
-      })).sort((a, b) => b.totalViews - a.totalViews);
-    }
+  /* ──────────────────────────────────────────────────────────────────────────
+     6. GAME & CATEGORY PERFORMANCE (Twitch Categories + YouTube Categories)
+     ────────────────────────────────────────────────────────────────────────── */
+  async function fetchCombinedGamePerformance(
+    channel: string,
+    platform: PlatformFilter,
+    startDate?: Date,
+    forceRefresh = false,
+  ): Promise<GamePerformance[]> {
+    const includeTwitch = platform === 'multi' || platform === 'twitch';
+    const includeYouTube = platform === 'multi' || platform === 'youtube';
 
-    // 2) Try StreamSession from EventSub
-    const sessions = await prisma.streamSession.findMany({
-      where: {
-        userId,
-        startedAt: startDate ? { gte: startDate } : undefined,
-      }
-    });
+    const [twResolved, ytAnalytics] = await Promise.all([
+      includeTwitch ? resolveTwitchUser(channel) : Promise.resolve(null),
+      includeYouTube ? fetchYouTubeChannelAnalytics(forceRefresh) : Promise.resolve(null),
+    ]);
 
-    const gameMap = new Map<string, { views: number[]; durations: number[]; count: number; followersGained: number; boxArtUrl?: string }>();
+    const results: GamePerformance[] = [];
 
-    for (const session of sessions) {
-      const gameName = session.gameName || 'General';
-      if (!gameMap.has(gameName)) gameMap.set(gameName, { views: [], durations: [], count: 0, followersGained: 0 });
-      const entry = gameMap.get(gameName)!;
-      entry.views.push(session.viewersMax);
-      const duration = session.endedAt
-        ? session.durationSeconds
-        : Math.floor((Date.now() - session.startedAt.getTime()) / 1000);
-      entry.durations.push(duration);
-      entry.count++;
-      entry.followersGained += session.followersGained;
-    }
+    if (twResolved) {
+      const { apiClient, user } = twResolved;
+      const videos = await apiClient.videos
+        .getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 100 })
+        .catch(() => ({ data: [] }));
+      const filteredVideos = startDate
+        ? videos.data.filter((v) => v.creationDate >= startDate)
+        : videos.data;
+      const events = getEvents(channel.toLowerCase());
 
-    // 3) Fallback: fetch from Twitch VODs
-    if (sessions.length === 0) {
-      const videos = await apiClient.videos.getVideosByUser(userId, { type: 'archive', period: 'all', limit: 100 }).catch(() => ({ data: [] }));
-      const filteredVideos = startDate ? videos.data.filter(v => v.creationDate >= startDate) : videos.data;
-      const events = getEvents(channelLogin);
+      const gameMap = new Map<
+        string,
+        {
+          views: number[];
+          durations: number[];
+          count: number;
+          followersGained: number;
+          boxArtUrl?: string;
+        }
+      >();
 
       for (const video of filteredVideos) {
         const raw = getRawData(video) as unknown as Record<string, unknown>;
         let gameName = String(raw.game_name || '');
-        if (!gameName || gameName === 'Unknown' || gameName === '') {
+        if (!gameName || gameName === 'Unknown') {
           if (raw.game_id) {
             try {
               const g = await apiClient.games.getGameById(String(raw.game_id));
               if (g) gameName = g.name;
             } catch {}
           }
-          if (!gameName) gameName = 'General';
+          if (!gameName) gameName = 'General (Twitch)';
         }
-        if (!gameMap.has(gameName)) gameMap.set(gameName, { views: [], durations: [], count: 0, followersGained: 0 });
+        if (!gameMap.has(gameName)) {
+          gameMap.set(gameName, { views: [], durations: [], count: 0, followersGained: 0 });
+        }
         const entry = gameMap.get(gameName)!;
         entry.views.push(video.views);
         entry.durations.push(video.durationInSeconds);
         entry.count++;
         const startTime = video.creationDate.getTime();
         const endTime = startTime + video.durationInSeconds * 1000;
-        entry.followersGained += events.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && e.type === 'follow').length;
+        entry.followersGained += events.filter(
+          (e) =>
+            e.timestamp >= startTime &&
+            e.timestamp <= endTime &&
+            e.type === 'follow' &&
+            (e.platform || 'twitch') === 'twitch',
+        ).length;
+      }
+
+      for (const gameName of gameMap.keys()) {
+        try {
+          const game = await apiClient.games.getGameByName(gameName);
+          if (game) {
+            gameMap.get(gameName)!.boxArtUrl = game.boxArtUrl
+              .replace('{width}', '144')
+              .replace('{height}', '192');
+          }
+        } catch {}
+      }
+
+      for (const [gameName, data] of gameMap.entries()) {
+        const totalViews = data.views.reduce((a, b) => a + b, 0);
+        results.push({
+          platform: 'twitch',
+          gameName,
+          boxArtUrl: data.boxArtUrl,
+          streamCount: data.count,
+          totalViews,
+          avgViewers: Math.round(totalViews / data.count),
+          maxViewers: Math.max(...data.views),
+          followersGained: data.followersGained,
+          avgDuration: Math.round(data.durations.reduce((a, b) => a + b, 0) / data.count),
+        });
       }
     }
 
-    for (const gameName of gameMap.keys()) {
-      try {
-        const game = await apiClient.games.getGameByName(gameName);
-        if (game) gameMap.get(gameName)!.boxArtUrl = game.boxArtUrl.replace('{width}', '144').replace('{height}', '192');
-      } catch {}
+    if (ytAnalytics?.archives?.length) {
+      const filteredYt = startDate
+        ? ytAnalytics.archives.filter((a) => new Date(a.publishedAt) >= startDate)
+        : ytAnalytics.archives;
+
+      const ytCatMap = new Map<
+        string,
+        {
+          views: number[];
+          durations: number[];
+          likes: number;
+          comments: number;
+          count: number;
+          thumb?: string;
+        }
+      >();
+
+      for (const a of filteredYt) {
+        const key = a.categoryName || 'Videojuegos (Gaming)';
+        if (!ytCatMap.has(key)) {
+          ytCatMap.set(key, {
+            views: [],
+            durations: [],
+            likes: 0,
+            comments: 0,
+            count: 0,
+            thumb: a.thumbnailUrl,
+          });
+        }
+        const entry = ytCatMap.get(key)!;
+        entry.views.push(a.views);
+        entry.durations.push(a.durationSeconds);
+        entry.likes += a.likes || 0;
+        entry.comments += a.comments || 0;
+        entry.count++;
+      }
+
+      for (const [catName, data] of ytCatMap.entries()) {
+        const totalViews = data.views.reduce((a, b) => a + b, 0);
+        results.push({
+          platform: 'youtube',
+          gameName: `${catName}`,
+          boxArtUrl: data.thumb,
+          streamCount: data.count,
+          totalViews,
+          avgViewers: Math.round(totalViews / data.count),
+          maxViewers: Math.max(...data.views),
+          followersGained: 0,
+          totalLikes: data.likes,
+          totalComments: data.comments,
+          avgDuration: Math.round(data.durations.reduce((a, b) => a + b, 0) / data.count),
+        });
+      }
     }
 
-    return Array.from(gameMap.entries()).map(([gameName, data]) => ({
-      gameName,
-      boxArtUrl: data.boxArtUrl,
-      streamCount: data.count,
-      totalViews: data.views.reduce((a, b) => a + b, 0),
-      avgViewers: Math.round(data.views.reduce((a, b) => a + b, 0) / data.count),
-      maxViewers: Math.max(...data.views),
-      followersGained: data.followersGained,
-      avgDuration: Math.round(data.durations.reduce((a, b) => a + b, 0) / data.count),
-    })).sort((a, b) => b.totalViews - a.totalViews);
+    return results.sort((a, b) => b.totalViews - a.totalViews);
   }
 
   app.get('/kpi/game-performance/:channel', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
       const { channel } = req.params as { channel: string };
-      const { period: periodStr } = req.query as { period?: string };
-      const period = parsePeriod(periodStr || '30d');
-      const apiClient = new ApiClient({ authProvider });
-      const user = await apiClient.users.getUserByName(channel);
-      if (!user) return reply.status(404).send({ error: 'Channel not found' });
-      const games = await fetchGamePerformance(apiClient, user.id, channel.toLowerCase(), getStartDate(period));
+      const { period: periodStr, platform: platStr } = req.query as {
+        period?: string;
+        platform?: string;
+      };
+      const period = parsePeriod(periodStr || 'all');
+      const platform = parsePlatform(platStr);
+      const games = await fetchCombinedGamePerformance(
+        channel,
+        platform,
+        getStartDate(period),
+        false,
+      );
       return { channel, games };
     } catch (err) {
       req.log.error(err, 'Game performance failed');
@@ -495,104 +1025,10 @@ export function setupKpi(app: FastifyInstance) {
 
   app.post('/kpi/game-performance/:channel/refresh', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
       const { channel } = req.params as { channel: string };
-      const apiClient = new ApiClient({ authProvider });
-      const user = await apiClient.users.getUserByName(channel);
-      if (!user) return reply.status(404).send({ error: 'Channel not found' });
-
-      // Fetch VODs and compute game stats
-      const videos = await apiClient.videos.getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 100 }).catch(() => ({ data: [] }));
-      const events = getEvents(channel.toLowerCase());
-      const gameMap = new Map<string, { views: number[]; durations: number[]; count: number; followersGained: number; boxArtUrl?: string }>();
-
-      for (const video of videos.data) {
-        const raw = getRawData(video) as unknown as Record<string, unknown>;
-        let gameName = String(raw.game_name || '');
-        if (!gameName || gameName === 'Unknown' || gameName === '') {
-          if (raw.game_id) {
-            try {
-              const g = await apiClient.games.getGameById(String(raw.game_id));
-              if (g) gameName = g.name;
-            } catch {}
-          }
-          if (!gameName) gameName = 'General';
-        }
-        if (!gameMap.has(gameName)) gameMap.set(gameName, { views: [], durations: [], count: 0, followersGained: 0 });
-        const entry = gameMap.get(gameName)!;
-        entry.views.push(video.views);
-        entry.durations.push(video.durationInSeconds);
-        entry.count++;
-        const startTime = video.creationDate.getTime();
-        const endTime = startTime + video.durationInSeconds * 1000;
-        entry.followersGained += events.filter(e => e.timestamp >= startTime && e.timestamp <= endTime && e.type === 'follow').length;
-      }
-
-      // Supplement with StreamSession data for streams whose VOD is not yet available
-      const recentSessions = await prisma.streamSession.findMany({
-        where: {
-          userId: user.id,
-          endedAt: { not: null },
-          startedAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
-        },
-      });
-      for (const session of recentSessions) {
-        const hasVodMatch = videos.data.some(v =>
-          Math.abs(v.creationDate.getTime() - session.startedAt.getTime()) < 3600000
-        );
-        if (hasVodMatch) continue;
-        const gameName = session.gameName || 'General';
-        if (!gameMap.has(gameName)) gameMap.set(gameName, { views: [], durations: [], count: 0, followersGained: 0 });
-        const entry = gameMap.get(gameName)!;
-        entry.views.push(session.viewersMax);
-        entry.durations.push(session.durationSeconds);
-        entry.count++;
-        entry.followersGained += session.followersGained;
-      }
-
-      for (const gameName of gameMap.keys()) {
-        try {
-          const game = await apiClient.games.getGameByName(gameName);
-          if (game) gameMap.get(gameName)!.boxArtUrl = game.boxArtUrl.replace('{width}', '144').replace('{height}', '192');
-        } catch {}
-      }
-
-      // Persist to GameStat table
-      const games: GamePerformance[] = [];
-      for (const [gameName, data] of gameMap.entries()) {
-        const totalViews = data.views.reduce((a, b) => a + b, 0);
-        const avgViewers = Math.round(data.count > 0 ? totalViews / data.count : 0);
-        const maxViewers = data.views.length > 0 ? Math.max(...data.views) : 0;
-        const avgDuration = Math.round(data.durations.reduce((a, b) => a + b, 0) / (data.count || 1));
-
-        await prisma.gameStat.upsert({
-          where: { userId_gameName: { userId: user.id, gameName } },
-          create: {
-            userId: user.id,
-            gameName,
-            boxArtUrl: data.boxArtUrl,
-            streamCount: data.count,
-            totalViews,
-            avgViewers,
-            maxViewers,
-            followersGained: data.followersGained,
-            avgDuration,
-          },
-          update: {
-            boxArtUrl: data.boxArtUrl,
-            streamCount: data.count,
-            totalViews,
-            avgViewers,
-            maxViewers,
-            followersGained: data.followersGained,
-            avgDuration,
-          },
-        });
-
-        games.push({ gameName, boxArtUrl: data.boxArtUrl, streamCount: data.count, totalViews, avgViewers, maxViewers, followersGained: data.followersGained, avgDuration });
-      }
-
-      games.sort((a, b) => b.totalViews - a.totalViews);
+      const { platform: platStr } = (req.body || {}) as { platform?: string };
+      const platform = parsePlatform(platStr);
+      const games = await fetchCombinedGamePerformance(channel, platform, undefined, true);
       return { channel, games };
     } catch (err) {
       req.log.error(err, 'Game performance refresh failed');
@@ -600,86 +1036,152 @@ export function setupKpi(app: FastifyInstance) {
     }
   });
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     7. BEST BROADCAST & UPLOAD SLOTS (Twitch + YouTube Schedule Intelligence)
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/best-slots/:channel', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
       const { channel } = req.params as { channel: string };
-      const { period: periodStr } = req.query as { period?: string };
+      const { period: periodStr, platform: platStr } = req.query as {
+        period?: string;
+        platform?: string;
+      };
       const period = parsePeriod(periodStr || 'all');
-
-      const apiClient = new ApiClient({ authProvider });
-      const user = await apiClient.users.getUserByName(channel);
-      if (!user) return reply.status(404).send({ error: 'Channel not found' });
-
+      const platform = parsePlatform(platStr);
       const startDate = getStartDate(period);
-      const videos = await apiClient.videos.getVideosByUser(user.id, { type: 'archive', period: 'all', limit: 100 }).catch(() => ({ data: [] }));
 
-      const filteredVideos = startDate
-        ? videos.data.filter(v => v.creationDate >= startDate)
-        : videos.data;
+      const includeTwitch = platform === 'multi' || platform === 'twitch';
+      const includeYouTube = platform === 'multi' || platform === 'youtube';
+
+      const [twResolved, ytAnalytics] = await Promise.all([
+        includeTwitch ? resolveTwitchUser(channel) : Promise.resolve(null),
+        includeYouTube ? fetchYouTubeChannelAnalytics() : Promise.resolve(null),
+      ]);
 
       const slotMap = new Map<string, { views: number[]; count: number }>();
 
-      for (const video of filteredVideos) {
-        const dayOfWeek = video.creationDate.getDay();
-        const hourStart = video.creationDate.getHours();
+      const addSlotEntry = (dateObj: Date, views: number) => {
+        const dayOfWeek = dateObj.getDay();
+        const hourStart = dateObj.getHours();
         const key = `${dayOfWeek}-${hourStart}`;
         if (!slotMap.has(key)) slotMap.set(key, { views: [], count: 0 });
         const entry = slotMap.get(key)!;
-        entry.views.push(video.views);
+        entry.views.push(views);
         entry.count++;
+      };
+
+      if (twResolved) {
+        const videos = await twResolved.apiClient.videos
+          .getVideosByUser(twResolved.user.id, { type: 'archive', period: 'all', limit: 100 })
+          .catch(() => ({ data: [] }));
+        for (const v of videos.data) {
+          if (startDate && v.creationDate < startDate) continue;
+          addSlotEntry(v.creationDate, v.views);
+        }
       }
 
-      const slots: BestSlot[] = Array.from(slotMap.entries()).map(([key, data]) => {
-        const [dayOfWeek, hourStart] = key.split('-').map(Number);
-        return {
-          dayOfWeek,
-          hourStart,
-          avgViewers: Math.round(data.views.reduce((a, b) => a + b, 0) / data.count),
-          streamCount: data.count,
-        };
-      }).sort((a, b) => b.avgViewers - a.avgViewers);
+      if (ytAnalytics?.archives?.length) {
+        for (const a of ytAnalytics.archives) {
+          const d = new Date(a.publishedAt);
+          if (startDate && d < startDate) continue;
+          addSlotEntry(d, a.views);
+        }
+      }
+
+      const slots: BestSlot[] = Array.from(slotMap.entries())
+        .map(([key, data]) => {
+          const [dayOfWeek, hourStart] = key.split('-').map(Number);
+          const totalViews = data.views.reduce((a, b) => a + b, 0);
+          return {
+            platform,
+            dayOfWeek,
+            hourStart,
+            avgViewers: Math.round(totalViews / data.count),
+            totalViews,
+            streamCount: data.count,
+          };
+        })
+        .sort((a, b) => b.avgViewers - a.avgViewers);
 
       return { channel, slots };
-    } catch (err) {
+    } catch {
       return reply.status(500).send({ error: 'Failed to fetch best slots' });
     }
   });
 
   app.post('/kpi/viewer-snapshot', async (req, reply) => {
-    const { channel, viewers, chattersActive } = req.body as { channel: string; viewers: number; chattersActive: number };
+    const { channel, viewers, chattersActive, twitchViewers, youtubeViewers } = req.body as {
+      channel: string;
+      viewers: number;
+      chattersActive: number;
+      twitchViewers?: number;
+      youtubeViewers?: number;
+    };
     if (!channel) return reply.status(400).send({ error: 'Missing channel' });
-    recordSnapshot(channel.toLowerCase(), viewers, chattersActive ?? 0);
+    recordSnapshot(
+      channel.toLowerCase(),
+      viewers,
+      chattersActive ?? 0,
+      twitchViewers,
+      youtubeViewers,
+    );
     return { ok: true };
   });
 
+  /* ──────────────────────────────────────────────────────────────────────────
+     8. GLOBAL TRENDS RADAR (Twitch Top Games + YouTube Gaming Popular)
+     ────────────────────────────────────────────────────────────────────────── */
   app.get('/kpi/top-twitch-games', async (req, reply) => {
     try {
-      if (!authProvider) return reply.status(401).send({ error: 'Not authenticated' });
-      const apiClient = new ApiClient({ authProvider });
+      const { platform: platStr } = req.query as { platform?: string };
+      const platform = parsePlatform(platStr);
+      const includeTwitch = platform === 'multi' || platform === 'twitch';
+      const includeYouTube = platform === 'multi' || platform === 'youtube';
 
-      const topGamesPage = await apiClient.games.getTopGames({ limit: 12 });
-      const games = topGamesPage.data;
+      const results: TwitchTopGame[] = [];
 
-      const results = await Promise.all(games.map(async (game) => {
+      if (includeTwitch && authProvider) {
         try {
-          const streamsPage = await apiClient.streams.getStreams({ game: game.id, limit: 100 });
-          const estimatedViewers = streamsPage.data.reduce((acc, stream) => acc + stream.viewers, 0);
-          return {
-            id: game.id,
-            name: game.name,
-            boxArtUrl: game.boxArtUrl.replace('{width}', '144').replace('{height}', '192'),
-            estimatedViewers
-          };
-        } catch {
-          return {
-            id: game.id,
-            name: game.name,
-            boxArtUrl: game.boxArtUrl.replace('{width}', '144').replace('{height}', '192'),
-            estimatedViewers: 0
-          };
-        }
-      }));
+          const apiClient = new ApiClient({ authProvider });
+          const topGamesPage = await apiClient.games.getTopGames({ limit: 12 });
+          const twGames = await Promise.all(
+            topGamesPage.data.map(async (game) => {
+              try {
+                const streamsPage = await apiClient.streams.getStreams({
+                  game: game.id,
+                  limit: 100,
+                });
+                const estimatedViewers = streamsPage.data.reduce(
+                  (acc, stream) => acc + stream.viewers,
+                  0,
+                );
+                return {
+                  id: `tw-${game.id}`,
+                  platform: 'twitch' as const,
+                  name: game.name,
+                  boxArtUrl: game.boxArtUrl.replace('{width}', '144').replace('{height}', '192'),
+                  estimatedViewers,
+                  activeStreamsCount: streamsPage.data.length,
+                };
+              } catch {
+                return {
+                  id: `tw-${game.id}`,
+                  platform: 'twitch' as const,
+                  name: game.name,
+                  boxArtUrl: game.boxArtUrl.replace('{width}', '144').replace('{height}', '192'),
+                  estimatedViewers: 0,
+                };
+              }
+            }),
+          );
+          results.push(...twGames);
+        } catch {}
+      }
+
+      if (includeYouTube) {
+        const ytTrends = await fetchYouTubeTopGamingTrends().catch(() => []);
+        results.push(...ytTrends);
+      }
 
       results.sort((a, b) => b.estimatedViewers - a.estimatedViewers);
       return { games: results };

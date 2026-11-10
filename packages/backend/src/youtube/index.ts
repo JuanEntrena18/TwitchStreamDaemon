@@ -11,6 +11,8 @@ import {
   type HudData,
   type YouTubeCredentialsInfo,
   type YouTubeBroadcastInfo,
+  type KpiVideoArchiveItem,
+  type TwitchTopGame,
 } from '@streamdaemon/shared';
 import { config } from '../config.js';
 import { encryptToken, decryptToken } from '../auth/token-crypto.js';
@@ -552,7 +554,7 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem, isHistory = false)
 
     if (roomSlug && !isHistory) {
       handleYouTubeChatCommand(roomSlug, displayName, text, Boolean(author.isChatSponsor));
-      incrementChatCounter(roomSlug, displayName);
+      incrementChatCounter(roomSlug, displayName, 'youtube');
       checkMessage(roomSlug, displayName, text);
     }
 
@@ -1024,6 +1026,196 @@ export async function updateYouTubeBroadcastInfo(payload: {
     broadcastId: videoId,
     message: 'Guardado en StreamDaemon (YouTube API rechazó la escritura o la emisión ha finalizado).',
   };
+}
+
+function parseIsoDurationSeconds(iso?: string): number {
+  if (!iso) return 0;
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  const h = Number(match[1] || 0);
+  const m = Number(match[2] || 0);
+  const s = Number(match[3] || 0);
+  return h * 3600 + m * 60 + s;
+}
+
+export interface YouTubeAnalyticsSnapshot {
+  channelId: string;
+  login: string;
+  displayName: string;
+  subscribers: number;
+  totalChannelViews: number;
+  videoCount: number;
+  isLive: boolean;
+  archives: KpiVideoArchiveItem[];
+}
+
+let ytAnalyticsCache: { data: YouTubeAnalyticsSnapshot; fetchedAt: number } | null = null;
+let ytTopGamingCache: { data: TwitchTopGame[]; fetchedAt: number } | null = null;
+
+export async function fetchYouTubeChannelAnalytics(forceRefresh = false): Promise<YouTubeAnalyticsSnapshot | null> {
+  if (!currentYouTubeUser) return null;
+  if (!forceRefresh && ytAnalyticsCache && Date.now() - ytAnalyticsCache.fetchedAt < 300_000) {
+    return ytAnalyticsCache.data;
+  }
+
+  const chData = await ytApiFetch<{
+    items?: Array<{
+      id: string;
+      snippet?: { title?: string; customUrl?: string };
+      statistics?: { subscriberCount?: string; viewCount?: string; videoCount?: string };
+      contentDetails?: { relatedPlaylists?: { uploads?: string } };
+    }>;
+  }>('channels', {
+    part: 'snippet,statistics,contentDetails',
+    id: currentYouTubeUser.id,
+  });
+
+  const ch = chData?.items?.[0];
+  const subscribers = Number(ch?.statistics?.subscriberCount ?? 0);
+  const totalChannelViews = Number(ch?.statistics?.viewCount ?? 0);
+  const videoCount = Number(ch?.statistics?.videoCount ?? 0);
+  const uploadsPlaylistId = ch?.contentDetails?.relatedPlaylists?.uploads;
+
+  const archives: KpiVideoArchiveItem[] = [];
+
+  if (uploadsPlaylistId) {
+    const plData = await ytApiFetch<{
+      items?: Array<{ contentDetails?: { videoId?: string } }>;
+    }>('playlistItems', {
+      part: 'contentDetails',
+      playlistId: uploadsPlaylistId,
+      maxResults: '40',
+    });
+
+    const videoIds = (plData?.items || [])
+      .map((it) => it.contentDetails?.videoId)
+      .filter((id): id is string => Boolean(id));
+
+    if (videoIds.length > 0) {
+      const vData = await ytApiFetch<{
+        items?: Array<{
+          id: string;
+          snippet?: {
+            title?: string;
+            publishedAt?: string;
+            categoryId?: string;
+            thumbnails?: {
+              medium?: { url?: string };
+              high?: { url?: string };
+              default?: { url?: string };
+            };
+          };
+          contentDetails?: { duration?: string };
+          statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
+          liveStreamingDetails?: {
+            actualStartTime?: string;
+            actualEndTime?: string;
+            concurrentViewers?: string;
+            activeLiveChatId?: string;
+          };
+        }>;
+      }>('videos', {
+        part: 'snippet,contentDetails,statistics,liveStreamingDetails',
+        id: videoIds.join(','),
+      });
+
+      for (const v of vData?.items || []) {
+        let durationSeconds = parseIsoDurationSeconds(v.contentDetails?.duration);
+        if (
+          durationSeconds === 0 &&
+          v.liveStreamingDetails?.actualStartTime &&
+          v.liveStreamingDetails?.actualEndTime
+        ) {
+          const diff =
+            new Date(v.liveStreamingDetails.actualEndTime).getTime() -
+            new Date(v.liveStreamingDetails.actualStartTime).getTime();
+          if (diff > 0) durationSeconds = Math.floor(diff / 1000);
+        }
+
+        const views = Number(v.statistics?.viewCount ?? 0);
+        const likes = Number(v.statistics?.likeCount ?? 0);
+        const comments = Number(v.statistics?.commentCount ?? 0);
+        const concurrent = Number(v.liveStreamingDetails?.concurrentViewers ?? 0);
+        const catId = v.snippet?.categoryId || '20';
+
+        archives.push({
+          id: v.id,
+          platform: 'youtube',
+          title: v.snippet?.title || 'Vídeo / Emisión de YouTube',
+          categoryName: getYouTubeCategoryName(catId),
+          publishedAt:
+            v.liveStreamingDetails?.actualStartTime ||
+            v.snippet?.publishedAt ||
+            new Date().toISOString(),
+          durationSeconds,
+          views,
+          likes,
+          comments,
+          peakConcurrentViewers: Math.max(concurrent, views),
+          thumbnailUrl:
+            v.snippet?.thumbnails?.medium?.url ||
+            v.snippet?.thumbnails?.high?.url ||
+            v.snippet?.thumbnails?.default?.url,
+          url: `https://www.youtube.com/watch?v=${v.id}`,
+          isLiveArchive: Boolean(
+            v.liveStreamingDetails?.actualStartTime || v.liveStreamingDetails?.activeLiveChatId,
+          ),
+        });
+      }
+    }
+  }
+
+  const snapshot: YouTubeAnalyticsSnapshot = {
+    channelId: currentYouTubeUser.id,
+    login: currentYouTubeUser.login,
+    displayName: currentYouTubeUser.displayName,
+    subscribers,
+    totalChannelViews,
+    videoCount,
+    isLive: Boolean(currentYouTubeUser.liveBroadcastId),
+    archives,
+  };
+
+  ytAnalyticsCache = { data: snapshot, fetchedAt: Date.now() };
+  return snapshot;
+}
+
+export async function fetchYouTubeTopGamingTrends(): Promise<TwitchTopGame[]> {
+  if (ytTopGamingCache && Date.now() - ytTopGamingCache.fetchedAt < 900_000) {
+    return ytTopGamingCache.data;
+  }
+
+  const vData = await ytApiFetch<{
+    items?: Array<{
+      id: string;
+      snippet?: {
+        title?: string;
+        channelTitle?: string;
+        thumbnails?: { medium?: { url?: string }; high?: { url?: string } };
+      };
+      statistics?: { viewCount?: string };
+    }>;
+  }>('videos', {
+    part: 'snippet,statistics',
+    chart: 'mostPopular',
+    videoCategoryId: '20',
+    maxResults: '12',
+  });
+
+  if (!vData?.items?.length) return [];
+
+  const list: TwitchTopGame[] = vData.items.map((item) => ({
+    id: `yt-${item.id}`,
+    platform: 'youtube',
+    name: item.snippet?.title || 'Tendencia Gaming YouTube',
+    topChannelName: item.snippet?.channelTitle || 'YouTube Gaming',
+    boxArtUrl:
+      item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.high?.url || '',
+    estimatedViewers: Number(item.statistics?.viewCount ?? 0),
+  }));
+
+  ytTopGamingCache = { data: list, fetchedAt: Date.now() };
+  return list;
 }
 
 export async function sendYouTubeChatMessage(text: string): Promise<boolean> {

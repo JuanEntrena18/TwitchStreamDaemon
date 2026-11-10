@@ -145,7 +145,13 @@ export function setupHud(app: FastifyInstance) {
             }
           }
         } catch { /* ignore chatters fetch errors */ }
-        recordSnapshot(channel.toLowerCase(), data.viewers, chattersCount);
+        recordSnapshot(
+          channel.toLowerCase(),
+          data.viewers,
+          chattersCount,
+          data.platformBreakdown?.twitch?.viewers ?? 0,
+          data.platformBreakdown?.youtube?.viewers ?? 0,
+        );
       }
     }, interval * 1000);
     reply.send({ ok: true, interval });
