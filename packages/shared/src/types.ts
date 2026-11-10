@@ -85,14 +85,14 @@ export interface ChatMessageEvent {
   timestamp: number;
 }
 
-export interface ChannelFollowEvent {
+export interface ChannelFollowEvent { platform?: StreamPlatform;
   userDisplayName: string;
   userName: string;
   userId: string;
   timestamp: number;
 }
 
-export interface ChannelSubscribeEvent {
+export interface ChannelSubscribeEvent { platform?: StreamPlatform;
   userDisplayName: string;
   userName: string;
   tier: string;
@@ -100,7 +100,7 @@ export interface ChannelSubscribeEvent {
   timestamp: number;
 }
 
-export interface ChannelSubscriptionMessageEvent {
+export interface ChannelSubscriptionMessageEvent { platform?: StreamPlatform;
   userDisplayName: string;
   userName: string;
   tier: string;
@@ -110,7 +110,7 @@ export interface ChannelSubscriptionMessageEvent {
   timestamp: number;
 }
 
-export interface ChannelSubGiftEvent {
+export interface ChannelSubGiftEvent { platform?: StreamPlatform;
   gifterDisplayName: string;
   gifterName: string;
   tier: string;
@@ -119,7 +119,7 @@ export interface ChannelSubGiftEvent {
   timestamp: number;
 }
 
-export interface ChannelRedemptionEvent {
+export interface ChannelRedemptionEvent { platform?: StreamPlatform;
   userDisplayName: string;
   userName: string;
   rewardTitle: string;
@@ -136,7 +136,63 @@ export interface ChannelCheerEvent { platform?: StreamPlatform; formattedAmount?
   timestamp: number;
 }
 
-export interface HudData { platform?: StreamPlatform | 'multi'; platformBreakdown?: { twitch?: { viewers: number; followers: number; subscribers: number; isLive: boolean }; youtube?: { viewers: number; subscribers: number; members: number; isLive: boolean } };
+export interface HudPlatformTwitch {
+  viewers: number;
+  followers: number;
+  subscribers: number;
+  uptimeSeconds?: number;
+  streamTitle?: string;
+  gameName?: string;
+  startedAt?: string | null;
+  login?: string;
+  displayName?: string;
+  isLive: boolean;
+}
+
+export interface HudPlatformYouTube {
+  viewers: number;
+  subscribers: number;
+  members: number;
+  uptimeSeconds?: number;
+  streamTitle?: string;
+  description?: string;
+  categoryId?: string;
+  categoryName?: string;
+  tags?: string[];
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+  startedAt?: string | null;
+  liveBroadcastId?: string | null;
+  channelId?: string;
+  login?: string;
+  displayName?: string;
+  authMode?: 'oauth' | 'apikey' | null;
+  isLive: boolean;
+}
+
+export interface YouTubeCategoryOption {
+  id: string;
+  name: string;
+}
+
+export interface YouTubeBroadcastInfo {
+  connected: boolean;
+  authMode: 'oauth' | 'apikey' | null;
+  canEdit: boolean;
+  channelId?: string;
+  login?: string;
+  displayName?: string;
+  liveBroadcastId?: string | null;
+  isLive: boolean;
+  title: string;
+  description: string;
+  categoryId: string;
+  categoryName: string;
+  tags: string[];
+  privacyStatus: 'public' | 'unlisted' | 'private';
+  categories: YouTubeCategoryOption[];
+}
+
+export interface HudData { platform?: StreamPlatform | 'multi'; platformBreakdown?: { twitch?: HudPlatformTwitch; youtube?: HudPlatformYouTube };
   viewers: number;
   followers: number;
   subscribers: number;
@@ -364,7 +420,7 @@ export interface BestSlot {
   streamCount: number;
 }
 
-export interface ChannelRaidEvent {
+export interface ChannelRaidEvent { platform?: StreamPlatform;
   fromChannel: string;
   fromDisplayName: string;
   viewerCount: number;

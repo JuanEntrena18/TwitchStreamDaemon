@@ -10,6 +10,7 @@ import {
   type PlatformUser,
   type HudData,
   type YouTubeCredentialsInfo,
+  type YouTubeBroadcastInfo,
 } from '@streamdaemon/shared';
 import { config } from '../config.js';
 import { encryptToken, decryptToken } from '../auth/token-crypto.js';
@@ -33,10 +34,37 @@ const YT_SCOPES = [
   'https://www.googleapis.com/auth/youtube.force-ssl',
 ];
 
+export const YOUTUBE_CATEGORIES: Array<{ id: string; name: string }> = [
+  { id: '20', name: 'Videojuegos (Gaming)' },
+  { id: '24', name: 'Entretenimiento' },
+  { id: '22', name: 'Personas y blogs' },
+  { id: '10', name: 'Música' },
+  { id: '28', name: 'Ciencia y tecnología' },
+  { id: '17', name: 'Deportes' },
+  { id: '23', name: 'Comedia' },
+  { id: '27', name: 'Educación' },
+  { id: '25', name: 'Noticias y política' },
+  { id: '26', name: 'Consejos y estilo' },
+  { id: '1', name: 'Cine y animación' },
+  { id: '2', name: 'Motor y vehículos' },
+];
+
+export function getYouTubeCategoryName(categoryId?: string): string {
+  if (!categoryId) return 'Videojuegos (Gaming)';
+  return YOUTUBE_CATEGORIES.find((c) => c.id === categoryId)?.name || 'YouTube Live';
+}
+
 interface StoredYouTubeData {
   clientId?: string;
   clientSecretEnc?: string;
   apiKeyEnc?: string;
+  broadcastDraft?: {
+    title?: string;
+    description?: string;
+    categoryId?: string;
+    tags?: string[];
+    privacyStatus?: 'public' | 'unlisted' | 'private';
+  };
   session?: {
     authMode: 'oauth' | 'apikey';
     channelId: string;
@@ -64,6 +92,7 @@ interface YouTubeChannelItem {
   id: string;
   snippet?: {
     title?: string;
+    description?: string;
     customUrl?: string;
     thumbnails?: {
       default?: { url?: string };
@@ -80,10 +109,16 @@ interface YouTubeBroadcastItem {
   id: string;
   snippet?: {
     title?: string;
+    description?: string;
+    tags?: string[];
     liveChatId?: string;
     actualStartTime?: string;
     publishedAt?: string;
     categoryId?: string;
+  };
+  status?: {
+    privacyStatus?: 'public' | 'unlisted' | 'private';
+    lifeCycleStatus?: string;
   };
   liveStreamingDetails?: {
     activeLiveChatId?: string;
@@ -343,8 +378,31 @@ function normalizeHandleToLogin(customUrl?: string, title?: string, id?: string)
 /* ──────────────────────────────────────────────────────────
    ACTIVE BROADCAST & LIVE CHAT DISCOVERY (LOW QUOTA)
 ────────────────────────────────────────────────────────── */
-async function discoverActiveBroadcast(): Promise<{ broadcastId: string | null; liveChatId: string | null }> {
+async function discoverActiveBroadcast(manualVideoId?: string): Promise<{ broadcastId: string | null; liveChatId: string | null }> {
   if (!currentYouTubeUser) return { broadcastId: null, liveChatId: null };
+
+  // 0. If a manual video ID was provided, verify it directly via videos.list (costs 1 unit)
+  if (manualVideoId) {
+    const cleanId = extractYouTubeVideoId(manualVideoId);
+    if (cleanId) {
+      const vData = await ytApiFetch<{ items?: YouTubeBroadcastItem[] }>('videos', {
+        part: 'snippet,status,liveStreamingDetails',
+        id: cleanId,
+      });
+      const vItem = vData?.items?.[0];
+      if (vItem) {
+        const chatId = vItem.liveStreamingDetails?.activeLiveChatId || vItem.snippet?.liveChatId || null;
+        currentYouTubeUser.liveBroadcastId = vItem.id;
+        currentYouTubeUser.liveChatId = chatId;
+        if (storedData.session) {
+          storedData.session.liveBroadcastId = vItem.id;
+          storedData.session.liveChatId = chatId;
+          saveStoredYouTubeData();
+        }
+        return { broadcastId: vItem.id, liveChatId: chatId };
+      }
+    }
+  }
 
   // 1. If OAuth is active, liveBroadcasts.list(broadcastStatus=active) costs only 1 quota unit!
   if (youtubeAuthMode === 'oauth') {
@@ -359,6 +417,20 @@ async function discoverActiveBroadcast(): Promise<{ broadcastId: string | null; 
       currentYouTubeUser.liveBroadcastId = active.id;
       currentYouTubeUser.liveChatId = liveChatId;
       return { broadcastId: active.id, liveChatId };
+    }
+
+    // Check upcoming broadcast if not currently live so the streamer can pre-configure title/tags/category
+    const upcomingData = await ytApiFetch<{ items?: YouTubeBroadcastItem[] }>('liveBroadcasts', {
+      part: 'snippet,status,contentDetails',
+      broadcastStatus: 'upcoming',
+      maxResults: '1',
+    });
+    const upcoming = upcomingData?.items?.[0];
+    if (upcoming) {
+      const liveChatId = upcoming.snippet?.liveChatId || null;
+      currentYouTubeUser.liveBroadcastId = upcoming.id;
+      currentYouTubeUser.liveChatId = liveChatId;
+      return { broadcastId: upcoming.id, liveChatId };
     }
   }
 
@@ -375,7 +447,7 @@ async function discoverActiveBroadcast(): Promise<{ broadcastId: string | null; 
       if (isLiveMatch && canonicalMatch?.[1]) {
         const videoId = canonicalMatch[1];
         const vData = await ytApiFetch<{ items?: YouTubeBroadcastItem[] }>('videos', {
-          part: 'snippet,liveStreamingDetails',
+          part: 'snippet,status,liveStreamingDetails',
           id: videoId,
         });
         const vItem = vData?.items?.[0];
@@ -387,9 +459,34 @@ async function discoverActiveBroadcast(): Promise<{ broadcastId: string | null; 
     }
   } catch {}
 
+  // Preserve manually linked broadcastId if still valid in session
+  if (storedData.session?.liveBroadcastId) {
+    currentYouTubeUser.liveBroadcastId = storedData.session.liveBroadcastId;
+    currentYouTubeUser.liveChatId = storedData.session.liveChatId || null;
+    return {
+      broadcastId: currentYouTubeUser.liveBroadcastId,
+      liveChatId: currentYouTubeUser.liveChatId,
+    };
+  }
+
   currentYouTubeUser.liveBroadcastId = null;
   currentYouTubeUser.liveChatId = null;
   return { broadcastId: null, liveChatId: null };
+}
+
+function extractYouTubeVideoId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  try {
+    const u = new URL(trimmed);
+    const v = u.searchParams.get('v');
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+    const segments = u.pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last && /^[a-zA-Z0-9_-]{11}$/.test(last)) return last;
+  } catch {}
+  return null;
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -514,7 +611,7 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem, isHistory = false)
     });
 
     if (roomSlug) {
-      recordEvent(roomSlug, 'cheer', displayName, `envió Super Chat (${formattedAmount})`, equivalentBits);
+      recordEvent(roomSlug, 'cheer', displayName, `envió Super Chat (${formattedAmount})${comment ? `: "${comment}"` : ''}`, equivalentBits, 'youtube', formattedAmount);
       addSubathonTime(roomSlug, {
         id: crypto.randomUUID(),
         type: 'bits',
@@ -540,7 +637,7 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem, isHistory = false)
       timestamp: Date.now(),
     });
     if (roomSlug) {
-      recordEvent(roomSlug, 'sub', displayName, `se unió como miembro en YouTube (${levelName})`);
+      recordEvent(roomSlug, 'sub', displayName, `se unió como miembro en YouTube (${levelName})`, undefined, 'youtube');
       addSubathonTime(roomSlug, {
         id: crypto.randomUUID(),
         type: 'sub',
@@ -570,7 +667,7 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem, isHistory = false)
       timestamp: Date.now(),
     });
     if (roomSlug) {
-      recordEvent(roomSlug, 'resub', displayName, `cumplió ${months} mes(es) como miembro en YouTube`);
+      recordEvent(roomSlug, 'resub', displayName, `cumplió ${months} mes(es) como miembro en YouTube`, undefined, 'youtube');
       addSubathonTime(roomSlug, {
         id: crypto.randomUUID(),
         type: 'sub',
@@ -598,7 +695,7 @@ function processYouTubeChatItem(item: YouTubeChatMessageItem, isHistory = false)
       timestamp: Date.now(),
     });
     if (roomSlug) {
-      recordEvent(roomSlug, 'gift', displayName, `regaló ${count} membresía(s) en YouTube`, count);
+      recordEvent(roomSlug, 'gift', displayName, `regaló ${count} membresía(s) en YouTube`, count, 'youtube');
       for (let i = 0; i < count; i++) {
         addSubathonTime(roomSlug, {
           id: crypto.randomUUID(),
@@ -711,7 +808,11 @@ export async function fetchYouTubeHud(): Promise<HudData | null> {
   const subscribersCount = Number(chItem?.statistics?.subscriberCount ?? 0);
 
   let viewers = 0;
-  let streamTitle = chItem?.snippet?.title || currentYouTubeUser.displayName;
+  let streamTitle = storedData.broadcastDraft?.title || chItem?.snippet?.title || currentYouTubeUser.displayName;
+  let description = storedData.broadcastDraft?.description || chItem?.snippet?.description || '';
+  let categoryId = storedData.broadcastDraft?.categoryId || '20';
+  let tags = storedData.broadcastDraft?.tags || [];
+  let privacyStatus: 'public' | 'unlisted' | 'private' = storedData.broadcastDraft?.privacyStatus || 'public';
   let startedAt: string | null = null;
   let uptimeSeconds = 0;
   let isLive = false;
@@ -722,36 +823,206 @@ export async function fetchYouTubeHud(): Promise<HudData | null> {
 
   if (currentYouTubeUser.liveBroadcastId) {
     const vData = await ytApiFetch<{ items?: YouTubeBroadcastItem[] }>('videos', {
-      part: 'snippet,liveStreamingDetails',
+      part: 'snippet,status,liveStreamingDetails',
       id: currentYouTubeUser.liveBroadcastId,
     });
     const vItem = vData?.items?.[0];
-    if (vItem?.liveStreamingDetails) {
-      isLive = Boolean(vItem.liveStreamingDetails.activeLiveChatId || vItem.liveStreamingDetails.concurrentViewers);
-      viewers = Number(vItem.liveStreamingDetails.concurrentViewers ?? 0);
+    if (vItem) {
       streamTitle = vItem.snippet?.title || streamTitle;
-      startedAt = vItem.liveStreamingDetails.actualStartTime || null;
-      if (startedAt) {
-        uptimeSeconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-      }
-      if (vItem.liveStreamingDetails.activeLiveChatId) {
-        currentYouTubeUser.liveChatId = vItem.liveStreamingDetails.activeLiveChatId;
+      description = vItem.snippet?.description ?? description;
+      categoryId = vItem.snippet?.categoryId || categoryId;
+      tags = Array.isArray(vItem.snippet?.tags) ? vItem.snippet!.tags! : tags;
+      privacyStatus = vItem.status?.privacyStatus || privacyStatus;
+      if (vItem.liveStreamingDetails) {
+        isLive = Boolean(vItem.liveStreamingDetails.activeLiveChatId || vItem.liveStreamingDetails.concurrentViewers);
+        viewers = Number(vItem.liveStreamingDetails.concurrentViewers ?? 0);
+        startedAt = vItem.liveStreamingDetails.actualStartTime || null;
+        if (startedAt) {
+          uptimeSeconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+        }
+        if (vItem.liveStreamingDetails.activeLiveChatId) {
+          currentYouTubeUser.liveChatId = vItem.liveStreamingDetails.activeLiveChatId;
+        }
       }
     }
   }
 
+  const categoryName = getYouTubeCategoryName(categoryId);
+
   return {
     platform: 'youtube',
+    platformBreakdown: {
+      youtube: {
+        viewers,
+        subscribers: subscribersCount,
+        members: 0,
+        uptimeSeconds,
+        streamTitle,
+        description,
+        categoryId,
+        categoryName,
+        tags,
+        privacyStatus,
+        startedAt,
+        liveBroadcastId: currentYouTubeUser.liveBroadcastId || null,
+        channelId: currentYouTubeUser.id,
+        login: currentYouTubeUser.login,
+        displayName: currentYouTubeUser.displayName,
+        authMode: youtubeAuthMode,
+        isLive,
+      },
+    },
     viewers,
     followers: subscribersCount,
     subscribers: subscribersCount,
     uptimeSeconds,
     streamTitle,
-    gameName: 'YouTube Live',
+    gameName: categoryName,
     startedAt,
     isLive,
     lastFollower: null,
     lastSubscriber: null,
+  };
+}
+
+export async function getYouTubeBroadcastInfo(): Promise<YouTubeBroadcastInfo> {
+  if (!currentYouTubeUser) {
+    return {
+      connected: false,
+      authMode: null,
+      canEdit: false,
+      liveBroadcastId: null,
+      isLive: false,
+      title: storedData.broadcastDraft?.title || '',
+      description: storedData.broadcastDraft?.description || '',
+      categoryId: storedData.broadcastDraft?.categoryId || '20',
+      categoryName: getYouTubeCategoryName(storedData.broadcastDraft?.categoryId || '20'),
+      tags: storedData.broadcastDraft?.tags || [],
+      privacyStatus: storedData.broadcastDraft?.privacyStatus || 'public',
+      categories: YOUTUBE_CATEGORIES,
+    };
+  }
+
+  const hud = await fetchYouTubeHud();
+  const yt = hud?.platformBreakdown?.youtube;
+  const categoryId = yt?.categoryId || storedData.broadcastDraft?.categoryId || '20';
+
+  return {
+    connected: true,
+    authMode: youtubeAuthMode,
+    canEdit: youtubeAuthMode === 'oauth',
+    channelId: currentYouTubeUser.id,
+    login: currentYouTubeUser.login,
+    displayName: currentYouTubeUser.displayName,
+    liveBroadcastId: currentYouTubeUser.liveBroadcastId || null,
+    isLive: Boolean(yt?.isLive),
+    title: yt?.streamTitle || storedData.broadcastDraft?.title || currentYouTubeUser.displayName,
+    description: yt?.description ?? storedData.broadcastDraft?.description ?? '',
+    categoryId,
+    categoryName: getYouTubeCategoryName(categoryId),
+    tags: yt?.tags || storedData.broadcastDraft?.tags || [],
+    privacyStatus: yt?.privacyStatus || storedData.broadcastDraft?.privacyStatus || 'public',
+    categories: YOUTUBE_CATEGORIES,
+  };
+}
+
+export async function updateYouTubeBroadcastInfo(payload: {
+  title?: string;
+  description?: string;
+  categoryId?: string;
+  tags?: string[];
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+}): Promise<{ ok: boolean; syncedToYouTubeApi: boolean; broadcastId: string | null; message: string }> {
+  // Always persist in local broadcastDraft so metadata survives restarts and updates HUD immediately
+  storedData.broadcastDraft = {
+    title: payload.title !== undefined ? payload.title.slice(0, 100) : storedData.broadcastDraft?.title,
+    description: payload.description !== undefined ? payload.description.slice(0, 5000) : storedData.broadcastDraft?.description,
+    categoryId: payload.categoryId || storedData.broadcastDraft?.categoryId || '20',
+    tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 15) : storedData.broadcastDraft?.tags || [],
+    privacyStatus: payload.privacyStatus || storedData.broadcastDraft?.privacyStatus || 'public',
+  };
+  saveStoredYouTubeData();
+
+  if (!currentYouTubeUser) {
+    return {
+      ok: true,
+      syncedToYouTubeApi: false,
+      broadcastId: null,
+      message: 'Borrador guardado localmente (conecta YouTube para sincronizar con tu canal).',
+    };
+  }
+
+  if (youtubeAuthMode !== 'oauth') {
+    return {
+      ok: true,
+      syncedToYouTubeApi: false,
+      broadcastId: currentYouTubeUser.liveBroadcastId || null,
+      message: 'Guardado en StreamDaemon. Para modificar el directo en YouTube Studio automáticamente, inicia sesión con OAuth 2.0.',
+    };
+  }
+
+  if (!currentYouTubeUser.liveBroadcastId) {
+    await discoverActiveBroadcast();
+  }
+
+  const videoId = currentYouTubeUser.liveBroadcastId;
+  if (!videoId) {
+    return {
+      ok: true,
+      syncedToYouTubeApi: false,
+      broadcastId: null,
+      message: 'Plantilla de emisión guardada. Se aplicará en cuanto inicies o programes una emisión en YouTube Live.',
+    };
+  }
+
+  // Fetch existing snippet & status so we don't accidentally wipe fields not passed
+  const vData = await ytApiFetch<{ items?: YouTubeBroadcastItem[] }>('videos', {
+    part: 'snippet,status',
+    id: videoId,
+  });
+  const currentVideo = vData?.items?.[0];
+
+  const nextTitle = (payload.title ?? currentVideo?.snippet?.title ?? currentYouTubeUser.displayName).slice(0, 100);
+  const nextDescription = payload.description ?? currentVideo?.snippet?.description ?? '';
+  const nextCategoryId = payload.categoryId || currentVideo?.snippet?.categoryId || '20';
+  const nextTags = payload.tags ?? currentVideo?.snippet?.tags ?? [];
+  const nextPrivacy = payload.privacyStatus || currentVideo?.status?.privacyStatus || 'public';
+
+  const updated = await ytApiFetch<YouTubeBroadcastItem>(
+    'videos',
+    { part: 'snippet,status' },
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: videoId,
+        snippet: {
+          title: nextTitle,
+          description: nextDescription,
+          categoryId: nextCategoryId,
+          tags: nextTags,
+        },
+        status: {
+          privacyStatus: nextPrivacy,
+        },
+      }),
+    },
+  );
+
+  if (updated) {
+    return {
+      ok: true,
+      syncedToYouTubeApi: true,
+      broadcastId: videoId,
+      message: 'Metadatos de YouTube Live actualizados en tiempo real.',
+    };
+  }
+
+  return {
+    ok: true,
+    syncedToYouTubeApi: false,
+    broadcastId: videoId,
+    message: 'Guardado en StreamDaemon (YouTube API rechazó la escritura o la emisión ha finalizado).',
   };
 }
 
@@ -1098,7 +1369,6 @@ export async function setupYouTube(app: FastifyInstance) {
     }
     const { channel, type, user, message, amount = 5, currency = 'EUR', months = 6 } = parsed.data;
     const targetRoom = getTargetRoomChannel(channel);
-    const io = getIO();
 
     if (type === 'subscriber') {
       const payload = {
@@ -1108,8 +1378,8 @@ export async function setupYouTube(app: FastifyInstance) {
         userId: `yt-sim-${Date.now()}`,
         timestamp: Date.now(),
       };
-      io.to(`channel:${targetRoom}`).emit('channel:follow', payload);
-      recordEvent(targetRoom, 'follow', user, 'se suscribió al canal de YouTube');
+      emitToActiveRooms('channel:follow', payload);
+      recordEvent(targetRoom, 'follow', user, 'se suscribió al canal de YouTube', undefined, 'youtube');
       return reply.send({ ok: true, event: 'channel:follow', payload });
     }
 
@@ -1207,6 +1477,201 @@ export async function setupYouTube(app: FastifyInstance) {
     }
 
     return reply.send({ ok: true });
+  });
+
+  // 9. Get YouTube Live Broadcast Metadata & Categories
+  app.get('/youtube/broadcast/info', async (_req, reply) => {
+    const info = await getYouTubeBroadcastInfo();
+    return reply.send(info);
+  });
+
+  // 10. Update YouTube Live Broadcast Metadata (Title, Description, Category, Tags, Privacy)
+  app.put('/youtube/broadcast/info', async (req, reply) => {
+    const body = (req.body || {}) as {
+      title?: string;
+      description?: string;
+      categoryId?: string;
+      tags?: string[];
+      privacyStatus?: 'public' | 'unlisted' | 'private';
+    };
+    const result = await updateYouTubeBroadcastInfo(body);
+    return reply.send(result);
+  });
+
+  // 11. Detect or manually link a YouTube Live Broadcast ID / URL
+  app.post('/youtube/broadcast/detect', async (req, reply) => {
+    const body = (req.body || {}) as { videoIdOrUrl?: string };
+    if (body.videoIdOrUrl === '') {
+      // Clear manual override and re-discover
+      if (storedData.session) {
+        storedData.session.liveBroadcastId = null;
+        storedData.session.liveChatId = null;
+        saveStoredYouTubeData();
+      }
+      if (currentYouTubeUser) {
+        currentYouTubeUser.liveBroadcastId = null;
+        currentYouTubeUser.liveChatId = null;
+      }
+    }
+    const found = await discoverActiveBroadcast(body.videoIdOrUrl?.trim() || undefined);
+    const info = await getYouTubeBroadcastInfo();
+    return reply.send({
+      ok: Boolean(found.broadcastId),
+      broadcastId: found.broadcastId,
+      liveChatId: found.liveChatId,
+      info,
+    });
+  });
+
+  // 12. Simulate Twitch or YouTube Activity Events for testing Gestor de Stream & Overlays
+  app.post('/activity/simulate', async (req, reply) => {
+    const body = (req.body || {}) as {
+      platform?: 'twitch' | 'youtube';
+      type?: 'follow' | 'sub' | 'resub' | 'gift' | 'cheer' | 'raid' | 'redemption';
+      user?: string;
+      channel?: string;
+    };
+    const platform = body.platform === 'youtube' ? 'youtube' : 'twitch';
+    const type = body.type || 'follow';
+    const user = body.user?.trim() || (platform === 'youtube' ? 'CyberViewer_YT' : 'NeonRunner_TW');
+    const targetRoom = getTargetRoomChannel(body.channel);
+
+    if (platform === 'youtube') {
+      if (type === 'follow') {
+        const payload = {
+          platform: 'youtube' as const,
+          userDisplayName: user,
+          userName: user.toLowerCase(),
+          userId: `yt-sim-${Date.now()}`,
+          timestamp: Date.now(),
+        };
+        emitToActiveRooms('channel:follow', payload);
+        recordEvent(targetRoom, 'follow', user, 'se suscribió al canal de YouTube', undefined, 'youtube');
+      } else if (type === 'sub') {
+        emitToActiveRooms('channel:subscribe', {
+          platform: 'youtube',
+          userDisplayName: user,
+          userName: user.toLowerCase(),
+          tier: '1000',
+          isGift: false,
+          timestamp: Date.now(),
+        });
+        recordEvent(targetRoom, 'sub', user, 'se unió como miembro en YouTube (Nivel VIP)', undefined, 'youtube');
+      } else if (type === 'resub') {
+        emitToActiveRooms('channel:subscription-message', {
+          platform: 'youtube',
+          userDisplayName: user,
+          userName: user.toLowerCase(),
+          tier: '1000',
+          cumulativeMonths: 6,
+          streakMonths: 6,
+          messageText: '¡6 meses apoyando en YouTube Live!',
+          timestamp: Date.now(),
+        });
+        recordEvent(targetRoom, 'resub', user, 'cumplió 6 meses como miembro en YouTube', undefined, 'youtube');
+      } else if (type === 'gift') {
+        emitToActiveRooms('channel:subgift', {
+          platform: 'youtube',
+          gifterDisplayName: user,
+          gifterName: user.toLowerCase(),
+          tier: '1000',
+          amount: 5,
+          cumulativeAmount: 5,
+          timestamp: Date.now(),
+        });
+        recordEvent(targetRoom, 'gift', user, 'regaló 5 membresías en YouTube', 5, 'youtube');
+      } else if (type === 'cheer') {
+        emitToActiveRooms('channel:cheer', {
+          platform: 'youtube',
+          userDisplayName: user,
+          userName: user.toLowerCase(),
+          bits: 1000,
+          formattedAmount: '10,00 €',
+          tierColor: '#E65100',
+          message: '¡Gran directo en YouTube! Toma un Super Chat 🔥',
+          timestamp: Date.now(),
+        });
+        recordEvent(targetRoom, 'cheer', user, 'envió Super Chat (10,00 €): "¡Gran directo en YouTube!"', 1000, 'youtube', '10,00 €');
+      }
+      return reply.send({ ok: true, platform, type });
+    }
+
+    // Twitch simulation
+    if (type === 'follow') {
+      emitToActiveRooms('channel:follow', {
+        platform: 'twitch',
+        userDisplayName: user,
+        userName: user.toLowerCase(),
+        userId: `tw-sim-${Date.now()}`,
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'follow', user, 'siguió el canal', undefined, 'twitch');
+    } else if (type === 'sub') {
+      emitToActiveRooms('channel:subscribe', {
+        platform: 'twitch',
+        userDisplayName: user,
+        userName: user.toLowerCase(),
+        tier: '1000',
+        isGift: false,
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'sub', user, 'se suscribió (Tier 1)', undefined, 'twitch');
+    } else if (type === 'resub') {
+      emitToActiveRooms('channel:subscription-message', {
+        platform: 'twitch',
+        userDisplayName: user,
+        userName: user.toLowerCase(),
+        tier: '1000',
+        cumulativeMonths: 12,
+        streakMonths: 12,
+        messageText: '¡1 año en la comunidad de Twitch!',
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'resub', user, 'renovó suscripción (Tier 1, 12 meses)', undefined, 'twitch');
+    } else if (type === 'gift') {
+      emitToActiveRooms('channel:subgift', {
+        platform: 'twitch',
+        gifterDisplayName: user,
+        gifterName: user.toLowerCase(),
+        tier: '1000',
+        amount: 5,
+        cumulativeAmount: 5,
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'gift', user, 'regaló 5 suscripción(es) (Tier 1)', 5, 'twitch');
+    } else if (type === 'cheer') {
+      emitToActiveRooms('channel:cheer', {
+        platform: 'twitch',
+        userDisplayName: user,
+        userName: user.toLowerCase(),
+        bits: 500,
+        message: 'Cheer500 ¡Sigue así!',
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'cheer', user, 'donó 500 bits', 500, 'twitch');
+    } else if (type === 'raid') {
+      emitToActiveRooms('channel:raid', {
+        platform: 'twitch',
+        fromChannel: user.toLowerCase(),
+        fromDisplayName: user,
+        viewerCount: 42,
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'raid', user, 'hizo raid con 42 espectadores', 42, 'twitch');
+    } else if (type === 'redemption') {
+      emitToActiveRooms('channel:redemption', {
+        platform: 'twitch',
+        userDisplayName: user,
+        userName: user.toLowerCase(),
+        rewardTitle: 'Hidratación',
+        rewardCost: 250,
+        input: '',
+        timestamp: Date.now(),
+      });
+      recordEvent(targetRoom, 'redemption', user, 'canjeó Hidratación (250 pts)', 250, 'twitch');
+    }
+
+    return reply.send({ ok: true, platform, type });
   });
 }
 

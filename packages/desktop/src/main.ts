@@ -887,7 +887,7 @@ function getInitialLoadingHtml(): string {
     <div class="top-bar"></div>
     <div class="header-row">
       <span class="eyebrow">CYBER HAUTE COUTURE · BROADCAST SUITE</span>
-      <span class="ver">v${APP_VERSION || '0.7.1'}</span>
+      <span class="ver">v${APP_VERSION || '0.7.12'}</span>
     </div>
     <div class="stage">
       <div class="orb-glow"></div>

@@ -25,7 +25,10 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
       (currentUser?.login ? await api.users.getUserByName(currentUser.login).catch(() => null) : null);
     if (!user) return ytHud;
 
-    const stream = await api.streams.getStreamByUserId(user.id);
+    const [stream, channelInfo] = await Promise.all([
+      api.streams.getStreamByUserId(user.id).catch(() => null),
+      api.channels.getChannelInfoById(user.id).catch(() => null),
+    ]);
 
     let totalFollowers = 0;
     let lastFollower: string | null = null;
@@ -51,16 +54,38 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
       logger.warn({ channel: channelName, err: e }, '[HUD] Subs fetch failed');
     }
 
-    const twitchHud: HudData = {
+    const twUptimeSeconds = stream?.startDate
+      ? Math.floor((Date.now() - stream.startDate.getTime()) / 1000)
+      : 0;
+    const twTitle = stream?.title || channelInfo?.title || user.displayName;
+    const twGameName = stream?.gameName || channelInfo?.gameName || '';
+    const twStartedAt = stream?.startDate?.toISOString() ?? null;
+
+    const twitchBreakdown = {
       viewers: stream?.viewers ?? 0,
       followers: totalFollowers,
       subscribers: totalSubs,
-      uptimeSeconds: stream?.startDate
-        ? Math.floor((Date.now() - stream.startDate.getTime()) / 1000)
-        : 0,
-      streamTitle: stream?.title ?? user.displayName,
-      gameName: stream?.gameName ?? '',
-      startedAt: stream?.startDate?.toISOString() ?? null,
+      uptimeSeconds: twUptimeSeconds,
+      streamTitle: twTitle,
+      gameName: twGameName,
+      startedAt: twStartedAt,
+      login: user.name,
+      displayName: user.displayName,
+      isLive: !!stream,
+    };
+
+    const twitchHud: HudData = {
+      platform: 'twitch',
+      platformBreakdown: {
+        twitch: twitchBreakdown,
+      },
+      viewers: twitchBreakdown.viewers,
+      followers: totalFollowers,
+      subscribers: totalSubs,
+      uptimeSeconds: twUptimeSeconds,
+      streamTitle: twTitle,
+      gameName: twGameName,
+      startedAt: twStartedAt,
       isLive: !!stream,
       lastFollower,
       lastSubscriber,
@@ -69,6 +94,7 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
     if (!ytHud) return twitchHud;
 
     return {
+      platform: 'multi',
       viewers: twitchHud.viewers + ytHud.viewers,
       followers: twitchHud.followers + ytHud.followers,
       subscribers: twitchHud.subscribers + ytHud.subscribers,
@@ -80,12 +106,7 @@ async function fetchHud(channelName: string): Promise<HudData | null> {
       lastFollower: twitchHud.lastFollower ?? ytHud.lastFollower,
       lastSubscriber: twitchHud.lastSubscriber ?? ytHud.lastSubscriber,
       platformBreakdown: {
-        twitch: {
-          viewers: twitchHud.viewers,
-          followers: twitchHud.followers,
-          subscribers: twitchHud.subscribers,
-          isLive: twitchHud.isLive,
-        },
+        twitch: twitchBreakdown,
         youtube: ytHud.platformBreakdown?.youtube,
       },
     };
@@ -141,12 +162,17 @@ export function setupHud(app: FastifyInstance) {
   // Update stream title / game / tags
   app.put('/hud/stream/info', async (req, reply) => {
     const { channel, title, gameName, tags } = req.body as { channel: string; title?: string; gameName?: string; tags?: string[] };
-    if (!channel) return reply.status(400).send({ error: 'Missing channel' });
+    if (!channel && !currentUser?.login) return reply.status(400).send({ error: 'Missing channel' });
 
     try {
       if (!authProvider) return reply.status(503).send({ error: 'Not authenticated' });
       const api = new ApiClient({ authProvider });
-      const user = await api.users.getUserByName(channel);
+      const cleanName = String(channel || '').trim().replace(/^[@#]/, '').toLowerCase();
+      const user =
+        (cleanName && /^[a-z0-9_]{2,25}$/.test(cleanName)
+          ? await api.users.getUserByName(cleanName).catch(() => null)
+          : null) ??
+        (currentUser?.login ? await api.users.getUserByName(currentUser.login).catch(() => null) : null);
       if (!user) return reply.status(404).send({ error: 'User not found' });
 
       const update: { title?: string; gameId?: string; tags?: string[] } = {};
@@ -192,26 +218,25 @@ export function setupHud(app: FastifyInstance) {
   // Get current channel tags and stream info
   app.get('/hud/tags/:channel', async (req, reply) => {
     const { channel } = req.params as { channel: string };
-    if (!channel) return reply.status(400).send({ error: 'Missing channel' });
+    if (!channel && !currentUser?.login) return reply.status(400).send({ error: 'Missing channel' });
 
     try {
       if (!authProvider) return reply.status(503).send({ error: 'Not authenticated' });
       const api = new ApiClient({ authProvider });
-      const user = await api.users.getUserByName(channel);
+      const cleanName = String(channel || '').trim().replace(/^[@#]/, '').toLowerCase();
+      const user =
+        (cleanName && /^[a-z0-9_]{2,25}$/.test(cleanName)
+          ? await api.users.getUserByName(cleanName).catch(() => null)
+          : null) ??
+        (currentUser?.login ? await api.users.getUserByName(currentUser.login).catch(() => null) : null);
       if (!user) return reply.status(404).send({ error: 'User not found' });
 
       const [channelInfo, stream] = await Promise.all([
-        api.channels.getChannelInfoById(user.id),
-        api.streams.getStreamByUserId(user.id),
+        api.channels.getChannelInfoById(user.id).catch(() => null),
+        api.streams.getStreamByUserId(user.id).catch(() => null),
       ]);
 
-      // Fetch all available stream tags from the Twitch API directly
       let allTags: Array<{ id: string; name: string; isAuto: boolean }> = [];
-      // NOTE: The /tags/streams Twitch API is deprecated and returns 410 Gone.
-      // Twitch now uses freeform string tags instead of a predefined dictionary.
-
-      // Fallback: if the allTags list is empty but the channel has active tags,
-      // create basic entries from the active tag IDs
       const activeTags: string[] = channelInfo?.tags ?? [];
       if (allTags.length === 0 && activeTags.length > 0) {
         allTags = activeTags.map((tagId) => ({
@@ -224,8 +249,9 @@ export function setupHud(app: FastifyInstance) {
       reply.send({
         allTags,
         activeTagIds: activeTags,
-        gameId: stream?.gameId ?? null,
-        gameName: stream?.gameName ?? '',
+        title: stream?.title || channelInfo?.title || '',
+        gameId: stream?.gameId || channelInfo?.gameId || null,
+        gameName: stream?.gameName || channelInfo?.gameName || '',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch tags';

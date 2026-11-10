@@ -1,6 +1,6 @@
 {
   "name": "@streamdaemon/backend",
-  "version": "0.7.1",
+  "version": "0.7.12",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

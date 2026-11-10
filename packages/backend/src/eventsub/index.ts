@@ -48,12 +48,13 @@ export async function setupEventSub() {
   trySubscribe('channel.follow', () => {
     listener!.onChannelFollow(userId, userId, (e) => {
       emit(channelName, 'channel:follow', {
+        platform: 'twitch',
         userDisplayName: e.userDisplayName,
         userName: e.userName,
         userId: e.userId,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'follow', e.userDisplayName, 'siguió el canal');
+      recordEvent(channelName, 'follow', e.userDisplayName, 'siguió el canal', undefined, 'twitch');
       checkFollow(e.userId, e.userName).catch(() => {});
       incrementSessionFollowers(userId);
       addSubathonTime(channelName, {
@@ -68,13 +69,14 @@ export async function setupEventSub() {
     listener!.onChannelSubscription(userId, (e) => {
       const tierLabel = { '1000': 'Tier 1', '2000': 'Tier 2', '3000': 'Tier 3' }[e.tier] ?? e.tier;
       emit(channelName, 'channel:subscribe', {
+        platform: 'twitch',
         userDisplayName: e.userDisplayName,
         userName: e.userName,
         tier: e.tier,
         isGift: e.isGift,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'sub', e.userDisplayName, `se suscribió (${tierLabel})`);
+      recordEvent(channelName, 'sub', e.userDisplayName, `se suscribió (${tierLabel})`, undefined, 'twitch');
       addSubathonTime(channelName, {
         id: crypto.randomUUID(), type: 'sub',
         user: e.userDisplayName, amount: 1, timeAdded: 0,
@@ -88,6 +90,7 @@ export async function setupEventSub() {
     listener!.onChannelSubscriptionMessage(userId, (e) => {
       const tierLabel = { '1000': 'Tier 1', '2000': 'Tier 2', '3000': 'Tier 3' }[e.tier] ?? e.tier;
       emit(channelName, 'channel:subscription-message', {
+        platform: 'twitch',
         userDisplayName: e.userDisplayName,
         userName: e.userName,
         tier: e.tier,
@@ -96,7 +99,7 @@ export async function setupEventSub() {
         messageText: e.messageText,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'resub', e.userDisplayName, `renovó suscripción (${tierLabel}, ${e.cumulativeMonths} meses)`);
+      recordEvent(channelName, 'resub', e.userDisplayName, `renovó suscripción (${tierLabel}, ${e.cumulativeMonths} meses)`, undefined, 'twitch');
       addSubathonTime(channelName, {
         id: crypto.randomUUID(), type: 'sub',
         user: e.userDisplayName, amount: 1, timeAdded: 0,
@@ -111,6 +114,7 @@ export async function setupEventSub() {
       const gifter = e.isAnonymous ? 'Anónimo' : e.gifterDisplayName;
       const tierLabel = { '1000': 'Tier 1', '2000': 'Tier 2', '3000': 'Tier 3' }[e.tier] ?? e.tier;
       emit(channelName, 'channel:subgift', {
+        platform: 'twitch',
         gifterDisplayName: gifter,
         gifterName: e.isAnonymous ? 'anonymous' : e.gifterName,
         tier: e.tier,
@@ -118,7 +122,7 @@ export async function setupEventSub() {
         cumulativeAmount: e.cumulativeAmount,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'gift', gifter, `regaló ${e.amount} suscripción(es) (${tierLabel})`, e.amount);
+      recordEvent(channelName, 'gift', gifter, `regaló ${e.amount} suscripción(es) (${tierLabel})`, e.amount, 'twitch');
       for (let i = 0; i < e.amount; i++) {
         addSubathonTime(channelName, {
           id: crypto.randomUUID(), type: 'sub',
@@ -133,6 +137,7 @@ export async function setupEventSub() {
   trySubscribe('channel.redemption.add', () => {
     listener!.onChannelRedemptionAdd(userId, (e) => {
       emit(channelName, 'channel:redemption', {
+        platform: 'twitch',
         userDisplayName: e.userDisplayName,
         userName: e.userName,
         rewardTitle: e.rewardTitle,
@@ -140,7 +145,7 @@ export async function setupEventSub() {
         input: e.input,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'redemption', e.userDisplayName, `canjeó ${e.rewardTitle} (${e.rewardCost} pts)`);
+      recordEvent(channelName, 'redemption', e.userDisplayName, `canjeó ${e.rewardTitle} (${e.rewardCost} pts)`, e.rewardCost, 'twitch');
 
       const active = getActiveGiveaway(channelName);
       console.log(`[Sorteo] Redención de "${e.rewardTitle}" (${e.rewardCost} pts) por ${e.userName}`);
@@ -172,13 +177,14 @@ export async function setupEventSub() {
     listener!.onChannelCheer(userId, (e) => {
       const user = e.userDisplayName ?? 'Anónimo';
       emit(channelName, 'channel:cheer', {
+        platform: 'twitch',
         userDisplayName: user,
         userName: e.userName ?? 'anonymous',
         bits: e.bits,
         message: e.message,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'cheer', user, `donó ${e.bits} bits`, e.bits);
+      recordEvent(channelName, 'cheer', user, `donó ${e.bits} bits`, e.bits, 'twitch');
       addSubathonTime(channelName, {
         id: crypto.randomUUID(), type: 'bits',
         user: user ?? 'Anónimo', amount: e.bits, timeAdded: 0,
@@ -190,12 +196,13 @@ export async function setupEventSub() {
   trySubscribe('channel.raid', () => {
     listener!.onChannelRaidTo(userId, (e) => {
       emit(channelName, 'channel:raid', {
+        platform: 'twitch',
         fromChannel: e.raidingBroadcasterName,
         fromDisplayName: e.raidingBroadcasterDisplayName,
         viewerCount: e.viewers,
         timestamp: Date.now(),
       });
-      recordEvent(channelName, 'raid', e.raidingBroadcasterDisplayName, `hizo raid con ${e.viewers} espectadores`, e.viewers);
+      recordEvent(channelName, 'raid', e.raidingBroadcasterDisplayName, `hizo raid con ${e.viewers} espectadores`, e.viewers, 'twitch');
     });
   });
 

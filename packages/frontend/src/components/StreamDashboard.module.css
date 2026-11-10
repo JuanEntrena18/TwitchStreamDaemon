@@ -1,544 +1,1063 @@
-/* ══════════════════════════════════════════
-   STREAM DASHBOARD
-   Jerarquía: resumen del directo → preview + actividad → editor
-   ══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   StreamDashboard.module.css — Broadcast Master Control Room (MCR) Console
+   Follows docs/FRONTEND_DESIGN_GUIDELINES.md:
+   - Structural borders encode hierarchy and signal state
+   - Sentence-case labels, zero generic AI eyebrow clutter
+   - Tabular numerals reserved for live telemetry, timers, and timestamps
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-.emptyWrap {
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.container {
-  max-width: 1320px;
-  margin: 0 auto;
+.mcrRoot {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
+  width: 100%;
+  color: var(--text);
 }
 
-/* ── Resumen del directo ── */
-.summary {
+/* ── Top Master Control Header & Telemetry Strip ────────────────────────── */
+.mcrDeck {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.25s ease;
+}
+
+.mcrDeckLive {
+  border-color: rgba(16, 185, 129, 0.38);
+}
+
+.mcrTopBar {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
-  padding: 0.9rem 1.1rem;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
-.summaryMain {
+.identityGroup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
   flex: 1;
-  min-width: 220px;
+}
+
+.signalIndicators {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.signalPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text3);
+}
+
+.signalPillTwitchLive {
+  background: rgba(145, 70, 255, 0.14);
+  border-color: rgba(145, 70, 255, 0.45);
+  color: #c4b5fd;
+}
+
+.signalPillYoutubeLive {
+  background: rgba(255, 0, 51, 0.14);
+  border-color: rgba(255, 0, 51, 0.45);
+  color: #fca5a5;
+}
+
+.signalPillStandby {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--border);
+  color: var(--text3);
+}
+
+.pulseDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.pulseDotLive {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+  animation: pulseDotAnim 2s ease-in-out infinite;
+}
+
+@keyframes pulseDotAnim {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.88); }
+}
+
+.streamMetaSummary {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.statusRow {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.statusDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--sf-text-4);
-  flex-shrink: 0;
-}
-.statusDotLive {
-  background: var(--sf-live);
-  box-shadow: 0 0 0 3px var(--sf-live-glow);
-  animation: dashboard-live 2s ease-in-out infinite;
-}
-
-@keyframes dashboard-live {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.45; }
-}
-
-.statusLabel {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  color: var(--sf-text-3);
-}
-.statusLabelLive {
-  color: var(--sf-live);
-}
-
-.uptime {
-  font-family: 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 0.68rem;
-  color: var(--sf-text-3);
-  margin-left: 0.15rem;
-}
-
-.streamTitle {
-  margin: 0;
-  font-size: 1.02rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--sf-text);
+.streamHeadline {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.streamMeta {
-  margin: 0;
-  font-size: 0.76rem;
-  color: var(--sf-text-3);
+.streamSubline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ── Fila de estadísticas ── */
-.statsRow {
-  display: flex;
-  align-items: stretch;
-  border-left: 1px solid var(--sf-border);
-  padding-left: 0.25rem;
-}
-
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 0 1rem;
-  border-right: 1px solid var(--sf-border);
-  min-width: 82px;
-}
-.stat:last-child {
-  border-right: none;
-  padding-right: 0.25rem;
-}
-
-.statValue {
-  font-family: 'SF Mono', 'Cascadia Code', monospace;
-  font-variant-numeric: tabular-nums;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--sf-text);
-  line-height: 1.2;
-}
-
-.statLabel {
-  font-size: 0.62rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--sf-text-4);
-}
-
-.extLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.72rem;
+.categoryChip {
+  color: var(--cyan);
   font-weight: 500;
-  color: var(--sf-primary-light);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.extLink:hover {
-  text-decoration: underline;
 }
 
-/* ── Grid principal ── */
-.mainGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.leftCol {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  min-width: 0;
-}
-
-/* ── Preview ── */
-.previewCard {
-  padding: 5px;
-  overflow: hidden;
-}
-
-.previewWrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  border-radius: var(--sf-radius-sm);
-  overflow: hidden;
-  background: var(--sf-stage);
-}
-
-.previewIframe {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-.previewLoading {
-  position: absolute;
-  inset: 0;
+.headerControls {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: var(--sf-text-body-sm);
-  color: var(--sf-text-3);
-  pointer-events: none;
-}
-
-/* ── Actividad ── */
-.activityCard {
-  padding: 0.85rem 0.95rem 0.6rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.activityHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.cardTitle {
-  margin: 0;
-  font-size: 0.86rem;
-  font-weight: 700;
-  color: var(--sf-text);
-  letter-spacing: -0.01em;
+/* Scope Switcher (Multistream | Twitch | YouTube) */
+.scopeSwitcher {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
 }
 
-.filters {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: wrap;
-}
-
-.filterBtn {
+.scopeBtn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0.24rem 0.5rem;
-  border: none;
-  border-radius: var(--sf-radius-sm);
-  background: transparent;
-  color: var(--sf-text-3);
-  font-family: inherit;
-  font-size: 0.68rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.filterBtn:hover {
-  background: var(--sf-surface-hover);
-  color: var(--sf-text-2);
-}
-.filterBtnActive {
-  background: var(--sf-surface-hover);
-  color: var(--sf-text);
-}
-
-.eventList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.eventItem {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.4rem;
-  border-radius: var(--sf-radius-sm);
-  font-size: 0.78rem;
-}
-.eventItem:hover {
-  background: var(--sf-surface);
-}
-
-.eventIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
+  gap: 6px;
+  padding: 5px 11px;
   border-radius: 6px;
-  background: var(--sf-surface);
-  color: var(--sf-text-3);
-  flex-shrink: 0;
-}
-
-.eventUser {
-  color: var(--sf-text);
-  font-size: 0.78rem;
-  font-weight: 600;
-  max-width: 30%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.eventMsg {
-  color: var(--sf-text-2);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.eventTime {
-  font-family: 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 0.65rem;
-  color: var(--sf-text-4);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.activityEmpty {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  padding: 1.1rem 0.5rem;
-  color: var(--sf-text-4);
-}
-
-.activityEmptyTitle {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--sf-text-2);
-}
-
-.activityEmptyDesc {
-  margin: 2px 0 0;
-  font-size: 0.72rem;
-  color: var(--sf-text-3);
-  line-height: 1.5;
-}
-
-/* ── Editor de información ── */
-.infoCard {
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.fieldLabel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.66rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--sf-text-3);
-}
-
-.fieldCount {
-  font-family: 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 0.62rem;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-size: 12px;
   font-weight: 500;
-  color: var(--sf-text-4);
-  letter-spacing: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.fieldHint {
-  font-size: 0.72rem;
-  color: var(--sf-text-4);
+.scopeBtn:hover {
+  color: var(--text);
 }
 
-.searching {
-  position: absolute;
-  right: 8px;
-  top: 30px;
-  font-size: 0.62rem;
-  color: var(--sf-text-4);
-  pointer-events: none;
+.scopeBtnActiveMulti {
+  background: rgba(6, 182, 212, 0.14);
+  color: var(--cyan);
+  font-weight: 600;
 }
 
-.tagList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-height: 22px;
+.scopeBtnActiveTwitch {
+  background: rgba(145, 70, 255, 0.18);
+  color: #c4b5fd;
+  font-weight: 600;
 }
 
-.tagChip {
+.scopeBtnActiveYoutube {
+  background: rgba(255, 0, 51, 0.18);
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.quickLinksGroup {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 0.12rem 0.45rem;
-  border-radius: 999px;
-  background: rgba(124, 58, 237, 0.14);
-  border: 1px solid rgba(124, 58, 237, 0.3);
-  color: var(--sf-primary-light);
-  font-size: 0.68rem;
-  font-weight: 500;
-}
-
-.tagRemove {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: inherit;
-  opacity: 0.65;
-  font-size: 0.85rem;
-  line-height: 1;
-  font-family: inherit;
-}
-.tagRemove:hover {
-  opacity: 1;
-}
-
-.tagInputRow {
-  display: flex;
   gap: 6px;
 }
 
-.tagSuggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-height: 88px;
-  overflow-y: auto;
-}
-
-.tagBtn {
-  padding: 0.18rem 0.45rem;
-  border-radius: 999px;
-  border: none;
-  background: var(--sf-surface-hover);
-  color: var(--sf-text-2);
-  font-family: inherit;
-  font-size: 0.68rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.tagBtn:hover {
-  background: var(--sf-surface-elevated);
-  color: var(--sf-text);
-}
-
-.actions {
-  display: flex;
+.externalLink {
+  display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  padding-top: 0.15rem;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  transition: all 0.15s ease;
 }
 
-.savedMsg {
-  font-size: 0.72rem;
-  color: var(--sf-success);
+.externalLink:hover {
+  color: var(--text);
+  border-color: var(--border2);
 }
 
-/* ── Búsqueda de juego ── */
-.gameSearchResults {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 10;
-  margin-top: 4px;
-  background: var(--sf-bg-3);
-  border: 1px solid var(--sf-border-strong);
-  border-radius: var(--sf-radius-sm);
-  box-shadow: var(--sf-shadow-2);
-  max-height: 180px;
-  overflow-y: auto;
+.externalLinkTwitch:hover {
+  border-color: rgba(145, 70, 255, 0.5);
+  color: #c4b5fd;
 }
 
-.gameSearchItem {
-  display: flex;
+.externalLinkYoutube:hover {
+  border-color: rgba(255, 0, 51, 0.5);
+  color: #fca5a5;
+}
+
+.iconBtn {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.5rem;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
   cursor: pointer;
-  font-size: 0.78rem;
-  color: var(--sf-text);
-}
-.gameSearchItem:hover {
-  background: var(--sf-surface-hover);
+  transition: all 0.15s ease;
 }
 
-.boxArt {
-  width: 26px;
-  height: 36px;
-  border-radius: 4px;
-  object-fit: cover;
-  flex-shrink: 0;
+.iconBtn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border2);
 }
 
-/* ── Responsive ── */
-@media (max-width: 1080px) {
-  .mainGrid {
+.iconBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── 4-Column Structural Telemetry Strip ────────────────────────────────── */
+.telemetryStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 960px) {
+  .telemetryStrip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 540px) {
+  .telemetryStrip {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 760px) {
-  .statsRow {
-    border-left: none;
-    border-top: 1px solid var(--sf-border);
-    padding-left: 0;
-    padding-top: 0.75rem;
-    width: 100%;
-    justify-content: space-between;
-  }
-  .stat {
-    padding: 0 0.75rem;
-  }
-  .stat:first-child {
-    padding-left: 0;
-  }
-  .extLink {
-    display: none;
+.telemetryCell {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  border-right: 1px solid var(--border);
+}
+
+.telemetryCell:last-child {
+  border-right: none;
+}
+
+.telemetryLabelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.telemetryLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+}
+
+.telemetryPrimaryValue {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.telemetryBreakdownRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 20px;
+}
+
+.platformMetricBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badgeTwitch {
+  background: rgba(145, 70, 255, 0.12);
+  color: #c4b5fd;
+  border: 1px solid rgba(145, 70, 255, 0.28);
+}
+
+.badgeYoutube {
+  background: rgba(255, 0, 51, 0.12);
+  color: #fca5a5;
+  border: 1px solid rgba(255, 0, 51, 0.28);
+}
+
+.telemetrySubnote {
+  font-size: 11px;
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Main Two-Column Console Grid ───────────────────────────────────────── */
+.consoleGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .consoleGrid {
+    grid-template-columns: 1fr;
   }
 }
 
-/* ══════════════════════════════════════════
-   TEMA CLARO
-   ══════════════════════════════════════════ */
-
-:global([data-theme="light"]) .previewWrap {
-  background: #e5e5ea;
+.leftColumn,
+.rightColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
-:global([data-theme="light"]) .tagChip {
-  background: rgba(109, 40, 217, 0.07);
-  border-color: rgba(109, 40, 217, 0.18);
-  color: var(--sf-primary);
+/* ── Shared Panel Frame ─────────────────────────────────────────────────── */
+.panelFrame {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-/* Etiquetas pequeñas: subir un nivel en claro para mantener legibilidad */
-:global([data-theme="light"]) .statLabel,
-:global([data-theme="light"]) .fieldLabel,
-:global([data-theme="light"]) .streamMeta {
-  color: var(--sf-text-2);
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.015);
+  flex-wrap: wrap;
+}
+
+.panelTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.panelCountBadge {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--bg3);
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+
+/* ── Video Monitor Panel ────────────────────────────────────────────────── */
+.monitorControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.monitorViewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #050508;
+  overflow: hidden;
+}
+
+.monitorViewportDual {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  aspect-ratio: 16 / 7;
+  background: #050508;
+}
+
+@media (max-width: 680px) {
+  .monitorViewportDual {
+    grid-template-columns: 1fr;
+    aspect-ratio: auto;
+  }
+}
+
+.monitorPane {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  border-right: 1px solid var(--border);
+}
+
+.monitorPane:last-child {
+  border-right: none;
+}
+
+.monitorIframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.monitorCornerTag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.cornerTwitch {
+  background: rgba(20, 12, 38, 0.82);
+  border: 1px solid rgba(145, 70, 255, 0.5);
+  color: #c4b5fd;
+}
+
+.cornerYoutube {
+  background: rgba(38, 10, 16, 0.82);
+  border: 1px solid rgba(255, 0, 51, 0.5);
+  color: #fca5a5;
+}
+
+.monitorStandby {
+  width: 100%;
+  height: 100%;
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text3);
+}
+
+.standbyTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+.standbyHint {
+  font-size: 12px;
+  color: var(--text3);
+  max-width: 360px;
+  line-height: 1.45;
+}
+
+.ytBroadcastBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg3);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.ytBroadcastStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.ytBroadcastIdCode {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.ytLinkForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 220px;
+  justify-content: flex-end;
+}
+
+.ytLinkInput {
+  flex: 1;
+  max-width: 240px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: var(--mono);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.ytLinkInput:focus {
+  outline: none;
+  border-color: #ff0033;
+}
+
+/* ── Recent Activity Panel ──────────────────────────────────────────────── */
+.activityToolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.activityFilterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.typePillsRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.filterPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.filterPill:hover {
+  color: var(--text);
+  border-color: var(--border2);
+}
+
+.filterPillActive {
+  background: rgba(6, 182, 212, 0.14);
+  border-color: rgba(6, 182, 212, 0.45);
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.pillCount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.testEventBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.testSelect {
+  padding: 4px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text2);
+}
+
+.activityFeedList {
+  max-height: 410px;
+  overflow-y: auto;
+  divide-y: 1px solid var(--border);
+}
+
+.activityRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.12s ease;
+}
+
+.activityRow:last-child {
+  border-bottom: none;
+}
+
+.activityRow:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.platformTag {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+}
+
+.platformTagTwitch {
+  background: rgba(145, 70, 255, 0.16);
+  color: #c4b5fd;
+  border: 1px solid rgba(145, 70, 255, 0.35);
+}
+
+.platformTagYoutube {
+  background: rgba(255, 0, 51, 0.16);
+  color: #fca5a5;
+  border: 1px solid rgba(255, 0, 51, 0.35);
+}
+
+.eventTypeBadge {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+
+.activityMainText {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text2);
+  line-height: 1.35;
+}
+
+.activityActor {
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 5px;
+}
+
+.activityAmountChip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.activityTime {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.emptyActivityBox {
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text3);
+  font-size: 12.5px;
+}
+
+/* ── Right Column: Dual-Platform Broadcast Metadata Console ─────────────── */
+.editorTargetTabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.targetTabBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.targetTabBtn:hover {
+  color: var(--text);
+  border-color: var(--border2);
+}
+
+.targetTabTwitchActive {
+  background: rgba(145, 70, 255, 0.15);
+  border-color: rgba(145, 70, 255, 0.5);
+  color: #c4b5fd;
+}
+
+.targetTabYoutubeActive {
+  background: rgba(255, 0, 51, 0.15);
+  border-color: rgba(255, 0, 51, 0.5);
+  color: #fca5a5;
+}
+
+.targetTabMultiActive {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.5);
+  color: var(--cyan);
+}
+
+.editorBody {
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.platformNotice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fde68a;
+}
+
+.platformNoticeInfo {
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  color: var(--text2);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fieldLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.charCount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.textInput,
+.selectInput,
+.textareaInput {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--sans);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  transition: border-color 0.15s ease;
+}
+
+.textInput:focus,
+.selectInput:focus,
+.textareaInput:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+
+.textareaInput {
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.twoColFields {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .twoColFields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Game Search Dropdown */
+.categorySearchWrap {
+  position: relative;
+}
+
+.gameDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+
+.gameOptionBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gameOptionBtn:hover {
+  background: rgba(6, 182, 212, 0.12);
+}
+
+.gameBoxArt {
+  width: 26px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* Tags Editor */
+.tagsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tagBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+}
+
+.tagRemoveBtn {
+  border: none;
+  background: transparent;
+  color: var(--text3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.tagRemoveBtn:hover {
+  color: #f87171;
+}
+
+.tagAddRow {
+  display: flex;
+  gap: 8px;
+}
+
+/* Save Action Footer */
+.editorFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.savePrimaryBtn {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(6, 182, 212, 0.45);
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.22), rgba(145, 70, 255, 0.18));
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.savePrimaryBtn:hover:not(:disabled) {
+  border-color: var(--cyan);
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.32), rgba(145, 70, 255, 0.25));
+}
+
+.savePrimaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedbackBanner {
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.feedbackSuccess {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.38);
+  color: #6ee7b7;
+}
+
+.feedbackError {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  color: #fca5a5;
+}
+
+/* Channel Overview Cards at bottom of right column */
+.platformCardsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 540px) {
+  .platformCardsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.platformStatusCard {
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.platformStatusHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.platformStatusDetail {
+  font-size: 11.5px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
