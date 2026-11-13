@@ -515,6 +515,11 @@ function handleYouTubeChatCommand(channelSlug: string, authorName: string, text:
 
   if (cmd === '!sorteo') {
     enterGiveaway(channelSlug, authorName, isSponsor ? 1 : 0);
+    return;
+  }
+
+  if (cmd === '!predict' || cmd === '!votar') {
+    return;
   }
 
   checkCustomCommand(channelSlug, authorName, text).then((response) => {

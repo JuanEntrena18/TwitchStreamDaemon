@@ -237,10 +237,10 @@ function handleCommands(channel: string, user: string, text: string, subTier = 0
       if (enterGiveawayFn) {
         enterGiveawayFn(channel, user, subTier);
       }
-      break;
+      return;
     case '!predict':
     case '!votar':
-      break;
+      return;
   }
 
   checkCustomCommand(channel, user, text).then((response) => {

@@ -9,7 +9,7 @@ import { logger } from '../logger.js';
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-async function fetchHud(channelName: string): Promise<HudData | null> {
+export async function fetchHud(channelName: string): Promise<HudData | null> {
   const ytHud = currentYouTubeUser ? await fetchYouTubeHud().catch(() => null) : null;
 
   try {

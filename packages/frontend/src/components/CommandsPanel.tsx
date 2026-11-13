@@ -33,6 +33,11 @@ const TWITCH_VARS = [
   { var: '{viewers}', descKey: 'varViewers' },
   { var: '{followers}', descKey: 'varFollowers' },
   { var: '{subs}', descKey: 'varSubs' },
+  { var: '{subscribers}', descKey: 'varSubs' },
+  { var: '{lastfollower}', descKey: 'varLastFollower' },
+  { var: '{lastsub}', descKey: 'varLastSub' },
+  { var: '{lastsubscriber}', descKey: 'varLastSub' },
+  { var: '{platform}', descKey: 'varPlatform' },
   { var: '{count}', descKey: 'varUses' },
   { var: '{random:1-100}', descKey: 'varRandom' },
   { var: '{args}', descKey: 'varArgs' },
@@ -40,11 +45,41 @@ const TWITCH_VARS = [
 
 const EXAMPLE_COMMANDS = [
   { cmd: '!redes', resp: 'Sígueme en {channel}: https://twitch.tv/{channel}', descKey: 'exampleSocials' },
-  { cmd: '!edad', resp: 'El canal tiene {uptime} de directo hoy', descKey: 'exampleUptime' },
-  { cmd: '!sorteo', resp: '@{user} ganó un pase de batalla! 🎉', descKey: 'exampleWinner' },
+  { cmd: '!edad', resp: 'Llevamos {uptime} de directo hoy', descKey: 'exampleUptime' },
   { cmd: '!dado', resp: '{user} sacó un {random:1-6} 🎲', descKey: 'exampleDice' },
   { cmd: '!info', resp: '🎮 {game} · {title} · {viewers} viewers', descKey: 'exampleStreamInfo' },
+  { cmd: '!seguidores', resp: '¡Ya somos {followers} en el canal! ❤️', descKey: 'exampleFollowers' },
+  { cmd: '!subs', resp: '¡{subs} suscriptores y sumando! 💜', descKey: 'exampleSubs' },
 ];
+
+const RESERVED_COMMANDS = new Set(['sorteo', 'predict', 'votar']);
+
+function previewResponse(response: string, channel: string): string {
+  return response
+    .replace(/\{user\}/g, '@UsuarioEjemplo')
+    .replace(/\{channel\}/g, channel)
+    .replace(/\{streamer\}/g, channel)
+    .replace(/\{game\}/g, 'Elden Ring')
+    .replace(/\{title\}/g, 'Run no-hit | Día 3')
+    .replace(/\{uptime\}/g, '2h 15m')
+    .replace(/\{viewers\}/g, '1.247')
+    .replace(/\{followers\}/g, '12.4K')
+    .replace(/\{subs\}/g, '1.8K')
+    .replace(/\{subscribers\}/g, '1.8K')
+    .replace(/\{lastfollower\}/g, 'NuevoSeguidor')
+    .replace(/\{lastsub\}/g, 'MegaSubscriber')
+    .replace(/\{lastsubscriber\}/g, 'MegaSubscriber')
+    .replace(/\{platform\}/g, 'multi')
+    .replace(/\{count\}/g, '42')
+    .replace(/\{random:\d+-\d+\}/g, (m) => {
+      const nums = m.match(/\d+/g);
+      if (!nums) return m;
+      const min = parseInt(nums[0], 10);
+      const max = parseInt(nums[1], 10);
+      return String(Math.floor((min + max) / 2));
+    })
+    .replace(/\{args\}/g, 'argumento ejemplo');
+}
 
 function VarPicker({ onSelect, onClose }: { onSelect: (v: string) => void; onClose: () => void }) {
   const { t } = useTranslation();
@@ -100,12 +135,19 @@ export function CommandsPanel({ channel }: Props) {
       .catch(() => {});
   }, [channel]);
 
+  const cleanCommandName = (name: string) => name.trim().toLowerCase().replace(/^!/, '');
+
   const addCommand = async () => {
     if (!newName.trim() || !newResponse.trim()) return;
+    const name = cleanCommandName(newName);
+    if (RESERVED_COMMANDS.has(name)) {
+      setError(t('commands.reservedError', { cmd: name }));
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      const r = await apiPost('/commands/add', { channel, name: newName.trim().toLowerCase(), response: newResponse.trim() });
+      const r = await apiPost('/commands/add', { channel, name, response: newResponse.trim() });
       if (r.ok) {
         const cmd = await r.json();
         setCommands((prev) => [...prev, cmd]);
@@ -120,6 +162,13 @@ export function CommandsPanel({ channel }: Props) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const useExample = (cmd: string, resp: string) => {
+    setNewName(cmd.replace(/^!/, ''));
+    setNewResponse(resp);
+    setShowHelp(false);
+    inputRef.current?.focus();
   };
 
   const toggleCommand = async (cmd: Command) => {
@@ -246,12 +295,23 @@ export function CommandsPanel({ channel }: Props) {
                 <span className={styles.exampleCmd}>{ex.cmd}</span>
                 <span className={styles.exampleResp}>{ex.resp}</span>
                 <span className={styles.exampleDesc}>{t('commands.' + ex.descKey)}</span>
+                <button
+                  type="button"
+                  onClick={() => useExample(ex.cmd, ex.resp)}
+                  className={`sf-btn ${styles.exampleUseBtn}`}
+                  title={t('commands.useExample')}
+                >
+                  {t('commands.useExample')}
+                </button>
               </div>
             ))}
           </div>
           <p className="sf-section-title text-sm mb-2">{t('commands.variablesDisponibles')}</p>
           <p className="text-dim mb-2" style={{ fontSize: '0.72rem' }}>
             {t('commands.variablesHelp')}
+          </p>
+          <p className="text-dim mb-2" style={{ fontSize: '0.72rem' }}>
+            {t('commands.youtubeNote') || 'Los comandos funcionan tanto en Twitch como en YouTube Live. En YouTube, las respuestas automáticas requieren conexión OAuth 2.0 (la API Key solo permite lectura).'}
           </p>
           <div className="grid-2" style={{ gap: '0.25rem 1rem' }}>
             {TWITCH_VARS.map((v) => (
@@ -302,6 +362,12 @@ export function CommandsPanel({ channel }: Props) {
               <VarPicker onSelect={(v) => handleVarInsert('new', v)} onClose={() => setShowVarPicker(null)} />
             )}
           </div>
+          {newResponse.trim() && (
+            <div className={styles.previewBox}>
+              <span className={styles.previewLabel}>{t('commands.preview') || 'Vista previa'}:</span>
+              <span className={styles.previewText}>{previewResponse(newResponse, channel)}</span>
+            </div>
+          )}
         </div>
         <div className="flex-row flex-row--gap-sm">
           <button onClick={addCommand} disabled={saving || !newName.trim() || !newResponse.trim()}
@@ -340,6 +406,12 @@ export function CommandsPanel({ channel }: Props) {
                       {showVarPicker === 'edit' && (
                         <VarPicker onSelect={(v) => handleVarInsert('edit', v)} onClose={() => setShowVarPicker(null)} />
                       )}
+                      {editing.response.trim() && (
+                        <div className={styles.previewBox}>
+                          <span className={styles.previewLabel}>{t('commands.preview') || 'Vista previa'}:</span>
+                          <span className={styles.previewText}>{previewResponse(editing.response, channel)}</span>
+                        </div>
+                      )}
                     </div>
                     <input value={editing.aliases.join(',')} onChange={(e) => setEditing({ ...editing, aliases: e.target.value.split(',').map((a) => a.trim()) })} placeholder={t('commands.aliasPlaceholder')} className="sf-input" style={{ width: 180, fontSize: '0.8rem' }} />
                   </div>
@@ -365,8 +437,13 @@ export function CommandsPanel({ channel }: Props) {
                   <span className={styles.commandResponse}>
                     {cmd.response}
                   </span>
-                  <span className={styles.commandCount}>
-                    {cmd.count > 0 ? `${cmd.count}x` : ''}
+                  <span className={styles.commandMeta}>
+                    {cmd.aliases.length > 0 && (
+                      <span className={styles.metaBadge}>{cmd.aliases.map(a => `!${a}`).join(', ')}</span>
+                    )}
+                    {cmd.modOnly && <span className={styles.metaBadge}>{t('commands.soloMods')}</span>}
+                    {cmd.cooldown > 0 && <span className={styles.metaBadge}>{cmd.cooldown}s</span>}
+                    {cmd.count > 0 && <span className={styles.metaBadge}>{cmd.count}×</span>}
                   </span>
                   <button onClick={() => { setEditing(cmd); setShowVarPicker(null); }} className={`sf-btn sf-btn-ghost ${styles.pillActionBtnSm}`} title={t('commands.editar')}>✏️</button>
                   <button onClick={() => toggleCommand(cmd)} className={`sf-btn sf-btn-ghost ${styles.pillActionBtnSm}`} title={cmd.enabled ? t('commands.deshabilitar') : t('commands.habilitar')}>

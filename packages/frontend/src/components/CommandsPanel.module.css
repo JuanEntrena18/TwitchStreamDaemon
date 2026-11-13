@@ -112,6 +112,24 @@
   font-size: 0.68rem;
 }
 
+.exampleUseBtn {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--sf-border);
+  background: transparent;
+  color: var(--sf-text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.exampleUseBtn:hover {
+  border-color: var(--sf-primary);
+  color: var(--sf-primary);
+  background: rgba(124, 58, 237, 0.1);
+}
+
 .varGridItem {
   font-size: 0.74rem;
   display: flex;
@@ -175,6 +193,46 @@
   color: var(--sf-text-3);
   min-width: 40px;
   text-align: right;
+}
+
+.commandMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.metaBadge {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.12);
+  color: #a78bfa;
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  white-space: nowrap;
+}
+
+.previewBox {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.previewLabel {
+  color: #22d3ee;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.previewText {
+  color: var(--sf-text-2);
+  word-break: break-word;
 }
 
 .editCard {

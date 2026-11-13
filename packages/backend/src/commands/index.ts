@@ -2,7 +2,8 @@ import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { CommandAddSchema, CommandDeleteSchema, CommandToggleSchema, CommandUpdateSchema, CommandImportSchema } from '@streamdaemon/shared';
+import { CommandAddSchema, CommandDeleteSchema, CommandToggleSchema, CommandUpdateSchema, CommandImportSchema, type HudData } from '@streamdaemon/shared';
+import { fetchHud } from '../hud/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../data');
@@ -20,6 +21,31 @@ interface Command {
 }
 
 let store = new Map<string, Command[]>();
+
+const hudCache = new Map<string, { data: HudData | null; ts: number }>();
+const HUD_CACHE_TTL_MS = 30_000;
+
+async function getCachedHud(channel: string): Promise<HudData | null> {
+  const key = channel.toLowerCase();
+  const now = Date.now();
+  const entry = hudCache.get(key);
+  if (entry && now - entry.ts < HUD_CACHE_TTL_MS) return entry.data;
+  const data = await fetchHud(channel);
+  hudCache.set(key, { data, ts: now });
+  return data;
+}
+
+function formatUptime(totalSeconds: number): string {
+  if (totalSeconds <= 0) return '0s';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const parts: string[] = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+  return parts.join(' ');
+}
 
 function load() {
   try {
@@ -74,22 +100,40 @@ export async function checkCustomCommand(channel: string, user: string, text: st
   console.log(`  🤖 Custom command !${cmdName} matched, responding: "${cmd.response}"`);
   cmd.count++;
   save();
-  
+
   let response = cmd.response;
   response = response.replace(/\{user\}/g, `@${user}`);
   response = response.replace(/\{channel\}/g, channel);
   response = response.replace(/\{streamer\}/g, channel);
   response = response.replace(/\{count\}/g, cmd.count.toString());
-  
+
   const args = parts.slice(1).join(' ');
   response = response.replace(/\{args\}/g, args);
-  
+
   response = response.replace(/\{random:(\d+)-(\d+)\}/g, (_, minStr, maxStr) => {
     const min = parseInt(minStr, 10);
     const max = parseInt(maxStr, 10);
     if (isNaN(min) || isNaN(max) || min > max) return '0';
     return Math.floor(Math.random() * (max - min + 1) + min).toString();
   });
+
+  // Stream / HUD variables
+  try {
+    const hud = await getCachedHud(channel);
+    response = response.replace(/\{game\}/g, hud?.gameName || '???');
+    response = response.replace(/\{title\}/g, hud?.streamTitle || '???');
+    response = response.replace(/\{viewers\}/g, String(hud?.viewers ?? 0));
+    response = response.replace(/\{followers\}/g, String(hud?.followers ?? 0));
+    response = response.replace(/\{subs\}/g, String(hud?.subscribers ?? 0));
+    response = response.replace(/\{subscribers\}/g, String(hud?.subscribers ?? 0));
+    response = response.replace(/\{uptime\}/g, formatUptime(hud?.uptimeSeconds ?? 0));
+    response = response.replace(/\{lastfollower\}/g, hud?.lastFollower || '???');
+    response = response.replace(/\{lastsub\}/g, hud?.lastSubscriber || '???');
+    response = response.replace(/\{lastsubscriber\}/g, hud?.lastSubscriber || '???');
+    response = response.replace(/\{platform\}/g, hud?.platform || 'twitch');
+  } catch (e) {
+    // Leave placeholders untouched if HUD fetch fails
+  }
 
   return response;
 }
@@ -114,7 +158,12 @@ export function setupCommands(app: FastifyInstance) {
 
     const cmds = store.get(channel)!;
     const cleanName = String(body.name).trim().toLowerCase().replace(/^!/, '');
-    
+
+    const RESERVED_COMMANDS = new Set(['sorteo', 'predict', 'votar']);
+    if (RESERVED_COMMANDS.has(cleanName)) {
+      return reply.status(409).send({ error: `!${cleanName} es un comando reservado del sistema` });
+    }
+
     if (cmds.find((c) => String(c.name || '').replace(/^!/, '') === cleanName)) {
       return reply.status(409).send({ error: `El comando !${cleanName} ya existe` });
     }
