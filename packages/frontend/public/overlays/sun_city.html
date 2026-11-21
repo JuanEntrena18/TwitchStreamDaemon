@@ -743,7 +743,7 @@
     <div class="platform-mini-bar">
       <span class="plat-pill"><span class="plat-dot" style="background:#a855f7"></span>TW <span id="val-tw-v">0</span></span>
       <span class="plat-pill"><span class="plat-dot" style="background:#ff2e55"></span>YT <span id="val-yt-v">0</span></span>
-      <span style="color:var(--gold)">SUN CITY LIVE</span>
+      <span id="conn-status" style="color:var(--gold)">SUN CITY LIVE</span>
     </div>
   </section>
 
@@ -1072,14 +1072,81 @@
     }, 4400);
   }
 
-  // ── 6. Socket.IO Live Connection ──────────────────────────────────────────
+  // ── 6. Socket.IO Live Connection + Twitch & YouTube Auto-Sync ────────────
+  var liveUptimeSec = 0;
+  var liveIsActive = false;
+
+  setInterval(function () {
+    if (!liveIsActive) return;
+    liveUptimeSec += 1;
+    document.getElementById('val-uptime').textContent = fmtUptime(liveUptimeSec);
+  }, 1000);
+
+  var origApplyHud = applyHud;
+  applyHud = function (data) {
+    if (!data) return;
+    liveIsActive = Boolean(data.isLive);
+    liveUptimeSec = Math.max(0, Math.floor(Number(data.uptimeSeconds) || 0));
+    origApplyHud(data);
+  };
+
+  function setConnStatus(text, color) {
+    var el = document.getElementById('conn-status');
+    if (!el) return;
+    el.textContent = text;
+    if (color) el.style.color = color;
+  }
+
+  function fetchLiveHud(targetChannel) {
+    var ch = targetChannel || CHANNEL;
+    if (!ch) return;
+    fetch(BACKEND_URL + '/hud/' + encodeURIComponent(ch))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) applyHud(d); })
+      .catch(function () {});
+  }
+
+  function startHudPoll(targetChannel) {
+    var ch = targetChannel || CHANNEL;
+    if (!ch) return;
+    fetch(BACKEND_URL + '/hud/start-poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: ch, interval: 10 }),
+    }).catch(function () {});
+  }
+
   function initSocket() {
     if (typeof window.io !== 'function') return;
-    var socket = window.io(BACKEND_URL, { transports: ['websocket'] });
+    var resolvedChannels = [CHANNEL];
+    var primaryChannel = CHANNEL;
+
+    var socket = window.io(BACKEND_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 2000,
+    });
+
+    function joinAllRooms() {
+      socket.emit('join:channel', 'global');
+      resolvedChannels.forEach(function (ch) {
+        if (ch) socket.emit('join:channel', ch.toLowerCase());
+      });
+    }
 
     socket.on('connect', function () {
-      socket.emit('join:channel', 'global');
-      if (CHANNEL) socket.emit('join:channel', CHANNEL);
+      setConnStatus('SUN CITY LIVE', 'var(--ocean)');
+      joinAllRooms();
+      startHudPoll(primaryChannel);
+      fetchLiveHud(primaryChannel);
+    });
+
+    socket.on('disconnect', function () {
+      setConnStatus('RECONECTANDO…', 'var(--sunset)');
+    });
+
+    socket.on('connect_error', function () {
+      setConnStatus('OFFLINE', 'var(--flamingo)');
     });
 
     socket.on('hud:update', applyHud);
@@ -1107,11 +1174,23 @@
       });
     });
 
+    socket.on('channel:subscription-message', function (d) {
+      var name = d.userDisplayName || d.userName || 'VIP';
+      var months = d.cumulativeMonths || 1;
+      document.getElementById('val-last-sub').textContent = name;
+      enqueueAlert({
+        kicker: d.platform === 'youtube' ? 'Hito de Miembro · YouTube' : '¡Renovación Sunset VIP!',
+        actor: name,
+        sub: months + ' meses en Sun City' + (d.messageText ? ' — ' + d.messageText : ''),
+        icon: '🏆',
+      });
+    });
+
     socket.on('channel:subgift', function (d) {
       enqueueAlert({
-        kicker: '¡Lluvia de Pase VIP!',
+        kicker: d.platform === 'youtube' ? '¡Membresías Regaladas · YouTube!' : '¡Lluvia de Pase VIP!',
         actor: d.gifterDisplayName || 'Anónimo',
-        sub: 'Ha regalado ' + (d.amount || 1) + ' suscripciones en Sun City',
+        sub: 'Ha regalado ' + (d.amount || 1) + (d.platform === 'youtube' ? ' membresías en YouTube' : ' suscripciones en Sun City'),
         icon: '🎁',
       });
     });
@@ -1134,11 +1213,41 @@
       });
     });
 
-    // Initial HTTP HUD fetch
-    fetch(BACKEND_URL + '/hud/' + encodeURIComponent(CHANNEL))
+    socket.on('channel:redemption', function (d) {
+      enqueueAlert({
+        kicker: 'Canje en Ocean Drive',
+        actor: d.userDisplayName || d.userName || 'Viewer',
+        sub: (d.rewardTitle || 'Recompensa') + (d.rewardCost ? ' (' + d.rewardCost + ' pts)' : ''),
+        icon: '🎟️',
+      });
+    });
+
+    // Resolve both Twitch & YouTube connected handles from backend so YouTube-only & Multistream work seamlessly
+    fetch(BACKEND_URL + '/auth/status')
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) applyHud(d); })
-      .catch(function () {});
+      .then(function (auth) {
+        if (!auth) return;
+        var tw = auth.twitchUser && auth.twitchUser.login ? auth.twitchUser.login.toLowerCase() : (auth.user && auth.user.login ? auth.user.login.toLowerCase() : '');
+        var yt = auth.youtubeUser && auth.youtubeUser.login ? auth.youtubeUser.login.toLowerCase() : '';
+        if (tw && resolvedChannels.indexOf(tw) === -1) resolvedChannels.push(tw);
+        if (yt && resolvedChannels.indexOf(yt) === -1) resolvedChannels.push(yt);
+        if ((!PARAMS.get('channel') || CHANNEL === 'streamer') && (tw || yt)) {
+          primaryChannel = tw || yt;
+          var display = (auth.twitchUser && auth.twitchUser.displayName) || (auth.youtubeUser && auth.youtubeUser.displayName) || primaryChannel;
+          document.getElementById('broadcaster-handle').textContent = '@' + String(display).toUpperCase();
+        }
+        joinAllRooms();
+        startHudPoll(primaryChannel);
+        fetchLiveHud(primaryChannel);
+      })
+      .catch(function () {
+        fetchLiveHud(primaryChannel);
+      });
+
+    // Fallback HTTP HUD refresh every 15s in case OBS opened before dashboard
+    setInterval(function () {
+      fetchLiveHud(primaryChannel);
+    }, 15000);
   }
 
   // ── 7. Demo Mode (?demo=true) ─────────────────────────────────────────────
@@ -1184,8 +1293,11 @@
   var script = document.createElement('script');
   script.src = './js/socket.io.js';
   script.onload = function () {
-    initSocket();
-    if (DEMO_MODE) startDemo();
+    if (DEMO_MODE) {
+      startDemo();
+    } else {
+      initSocket();
+    }
   };
   script.onerror = function () {
     if (DEMO_MODE) startDemo();
