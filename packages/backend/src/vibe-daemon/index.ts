@@ -9,6 +9,7 @@ import {
   type VibeDaemonEvent,
   type VibeDaemonState,
   type VibeDaemonGameId,
+  type VibeDaemonTrigger,
 } from '@streamdaemon/shared';
 import { getIO } from '../socket/index.js';
 import { logger } from '../logger.js';
@@ -28,70 +29,73 @@ export interface VibeDaemonAdapter {
 }
 
 const DEFAULT_CONFIG: VibeDaemonConfig = {
-  enabled: false,
+  enabled: true,
   triggers: [
     {
       id: 'global-kill',
-      gameId: 'global',
-      name: '+1 Kill',
+      gameId: 'fortnite',
+      name: '¡ELIMINACIÓN!',
       enabled: true,
       eventType: 'kill',
       condition: { type: 'count', count: 1, period: 'session' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3000, message: '¡ELIMINACIÓN! ({{kills}} KILLS)' },
     },
     {
       id: 'global-victory',
-      gameId: 'global',
-      name: '+1 Victory',
+      gameId: 'fortnite',
+      name: '¡VICTORIA MAGISTRAL!',
       enabled: true,
       eventType: 'victory',
       condition: { type: 'count', count: 1, period: 'session' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 5000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 5000, message: '👑 ¡VICTORIA MAGISTRAL!' },
     },
     {
       id: 'global-kill-streak',
-      gameId: 'global',
-      name: '5+ Kill Streak',
+      gameId: 'fortnite',
+      name: '¡RACHA IMPARABLE (5+)!',
       enabled: true,
       eventType: 'kill_streak',
       condition: { type: 'count', count: 5, period: 'match' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 4000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 4000, message: '⚡ ¡RACHA DE {{killStreak}} ELIMINACIONES!' },
     },
     {
       id: 'global-victory-streak',
-      gameId: 'global',
-      name: '2+ Victory Streak',
+      gameId: 'fortnite',
+      name: '¡DOBLE CORONA SEGUIDA!',
       enabled: true,
       eventType: 'victory_streak',
       condition: { type: 'count', count: 2, period: 'session' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 4000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 4500, message: '🏆 ¡{{victoryStreak}} VICTORIAS SEGUIDAS!' },
     },
     {
       id: 'fortnite-low-shield',
       gameId: 'fortnite',
-      name: 'Low Shield',
+      name: '¡ESCUDO ROTO!',
       enabled: true,
       eventType: 'low_shield',
       condition: { type: 'state' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3000, message: '🛡️ ¡SIN ESCUDO! ¡TOMA MINIS!' },
+      cooldownMs: 12000,
     },
     {
       id: 'fortnite-low-health',
       gameId: 'fortnite',
-      name: 'Low Health',
+      name: '¡VIDA CRÍTICA!',
       enabled: true,
       eventType: 'low_health',
       condition: { type: 'state' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3500, message: '🩸 ¡VIDA CRÍTICA! ¡BOTIQUÍN YA!' },
+      cooldownMs: 15000,
     },
     {
       id: 'fortnite-storm',
       gameId: 'fortnite',
-      name: 'Storm Shrinking',
+      name: '¡TORMENTA EN CAMINO!',
       enabled: true,
       eventType: 'storm_shrinking',
       condition: { type: 'state' },
-      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3000 },
+      action: { type: 'overlay', overlayId: 'vibe-daemon', durationMs: 3500, message: '🌀 ¡A LA ZONA! LA TORMENTA SE CIERRA' },
+      cooldownMs: 25000,
     },
   ],
   hotkeys: {
@@ -109,7 +113,11 @@ function loadConfig() {
     if (fs.existsSync(CONFIG_FILE)) {
       const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      config = { ...DEFAULT_CONFIG, ...parsed };
+      config = {
+        ...DEFAULT_CONFIG,
+        ...parsed,
+        hotkeys: { ...DEFAULT_CONFIG.hotkeys, ...(parsed.hotkeys || {}) },
+      };
     }
   } catch (e) {
     logger.warn({ err: e }, 'Failed to load vibe-daemon.json');
@@ -128,7 +136,7 @@ function saveConfig() {
 loadConfig();
 
 function getAdapter(gameId: VibeDaemonGameId): VibeDaemonAdapter {
-  switch (gameId) {
+  switch (normalizeGameId(gameId)) {
     case 'fortnite':
       return createFortniteAdapter({ channel: '' });
     case 'global':
@@ -137,34 +145,74 @@ function getAdapter(gameId: VibeDaemonGameId): VibeDaemonAdapter {
   }
 }
 
-export async function processVibeDaemonEvent(event: VibeDaemonEvent): Promise<VibeDaemonState> {
-  if (!config.enabled) return getState(event.channel, event.gameId);
+function emitActivation(trigger: VibeDaemonTrigger, channel: string, event: VibeDaemonEvent, state: VibeDaemonState) {
+  const ch = channel.toLowerCase();
+  const activation = buildActivation(trigger, ch, event, state);
+  const io = getIO();
 
-  const adapter = getAdapter(event.gameId);
-  const state = await adapter.handleEvent(event);
+  io.to(`channel:${ch}`).to('channel:global').emit('vibe-daemon:activation', activation);
 
-  const normalizedGameId = normalizeGameId(event.gameId);
-  const matchedTriggers = config.triggers.filter((trigger) => {
-    const matchesGame = trigger.gameId === 'global' || trigger.gameId === event.gameId || trigger.gameId === normalizedGameId;
-    if (!matchesGame) return false;
-    return evaluateTrigger(trigger, state, event);
-  });
-
-  for (const trigger of matchedTriggers) {
-    const activation = buildActivation(trigger, event.channel, event);
-    getIO().to(`channel:${event.channel}`).emit('vibe-daemon:activation', activation);
-    logger.info(
-      { triggerId: trigger.id, eventType: event.eventType, channel: event.channel },
-      'Vibe Daemon triggered',
-    );
+  if (trigger.action.type === 'tts') {
+    const text = activation.action.message || trigger.name;
+    io.to(`channel:${ch}`).to('channel:global').emit('tts:speak', {
+      text,
+      user: 'Vibe Daemon',
+      platform: 'twitch',
+      timestamp: Date.now(),
+    });
   }
 
-  getIO().to(`channel:${event.channel}`).emit('vibe-daemon:state', state);
-  return state;
+  logger.info(
+    { triggerId: trigger.id, eventType: event.eventType, channel: ch, actionType: trigger.action.type },
+    'Vibe Daemon triggered',
+  );
+}
+
+export async function processVibeDaemonEvent(
+  event: VibeDaemonEvent,
+  options?: { forceTest?: boolean; triggerId?: string },
+): Promise<VibeDaemonState> {
+  const ch = event.channel.toLowerCase();
+  const normalizedEvent: VibeDaemonEvent = { ...event, channel: ch };
+
+  if (!config.enabled && !options?.forceTest) {
+    return getState(ch, normalizeGameId(event.gameId));
+  }
+
+  const adapter = getAdapter(normalizedEvent.gameId);
+  const state = await adapter.handleEvent(normalizedEvent);
+
+  if (options?.triggerId) {
+    const exactTrigger = config.triggers.find((tr) => tr.id === options.triggerId);
+    if (exactTrigger) {
+      emitActivation(exactTrigger, ch, normalizedEvent, state);
+    }
+  } else {
+    const normalizedGameId = normalizeGameId(normalizedEvent.gameId);
+    const matchedTriggers = config.triggers.filter((trigger) => {
+      const trigGame = normalizeGameId(trigger.gameId);
+      const matchesGame = trigGame === 'global' || trigGame === normalizedGameId;
+      if (!matchesGame) return false;
+      if (options?.forceTest && trigger.eventType === normalizedEvent.eventType) return true;
+      return evaluateTrigger(trigger, state, normalizedEvent);
+    });
+
+    for (const trigger of matchedTriggers) {
+      emitActivation(trigger, ch, normalizedEvent, state);
+    }
+  }
+
+  const globalState = getState(ch, 'global');
+  getIO().to(`channel:${ch}`).to('channel:global').emit('vibe-daemon:state', globalState);
+  return globalState;
 }
 
 export function getVibeDaemonConfig(): VibeDaemonConfig {
-  return { ...config, triggers: config.triggers.map((t) => ({ ...t })) };
+  return {
+    ...config,
+    triggers: config.triggers.map((t) => ({ ...t })),
+    hotkeys: { ...config.hotkeys },
+  };
 }
 
 export function setupVibeDaemon(app: FastifyInstance) {
@@ -178,15 +226,15 @@ export function setupVibeDaemon(app: FastifyInstance) {
     config = {
       ...DEFAULT_CONFIG,
       ...parsed.data,
-      hotkeys: { ...DEFAULT_CONFIG.hotkeys, ...parsed.data.hotkeys },
+      hotkeys: { ...(parsed.data.hotkeys ?? {}) },
     };
     saveConfig();
-    reply.send({ ok: true });
+    reply.send({ ok: true, config: getVibeDaemonConfig() });
   });
 
-  app.get('/vibe-daemon/state/:channel', async (req, reply) => {
+  app.get('/vibe-daemon/state/:channel', async (req) => {
     const { channel } = req.params as { channel: string };
-    return getState(channel, normalizeGameId('global'));
+    return getState(channel.toLowerCase(), 'global');
   });
 
   app.post('/vibe-daemon/event', async (req, reply) => {
@@ -196,6 +244,7 @@ export function setupVibeDaemon(app: FastifyInstance) {
     }
     const event: VibeDaemonEvent = {
       ...parsed.data,
+      channel: parsed.data.channel.toLowerCase(),
       timestamp: parsed.data.timestamp ?? Date.now(),
     };
     const state = await processVibeDaemonEvent(event);
@@ -204,23 +253,35 @@ export function setupVibeDaemon(app: FastifyInstance) {
 
   app.post('/vibe-daemon/reset/:channel', async (req, reply) => {
     const { channel } = req.params as { channel: string };
-    const { gameId } = req.body as { gameId?: string };
-    resetState(channel, gameId || 'global');
-    reply.send({ ok: true });
+    const { gameId } = (req.body || {}) as { gameId?: string };
+    const ch = channel.toLowerCase();
+    resetState(ch, 'global');
+    resetState(ch, 'fortnite');
+    if (gameId && gameId !== 'global' && gameId !== 'fortnite') {
+      resetState(ch, gameId);
+    }
+    const fresh = getState(ch, 'global');
+    getIO().to(`channel:${ch}`).to('channel:global').emit('vibe-daemon:state', fresh);
+    reply.send({ ok: true, state: fresh });
   });
 
   app.post('/vibe-daemon/test', async (req, reply) => {
-    const { channel, eventType, gameId } = req.body as { channel: string; eventType: string; gameId?: string };
+    const { channel, eventType, gameId, triggerId } = (req.body || {}) as {
+      channel?: string;
+      eventType?: string;
+      gameId?: string;
+      triggerId?: string;
+    };
     if (!channel || !eventType) {
       return reply.status(400).send({ error: 'Missing channel or eventType' });
     }
     const event: VibeDaemonEvent = {
-      channel,
-      gameId: gameId || normalizeGameId('global'),
+      channel: channel.toLowerCase(),
+      gameId: gameId || 'fortnite',
       eventType: eventType as VibeDaemonEvent['eventType'],
       timestamp: Date.now(),
     };
-    const state = await processVibeDaemonEvent(event);
+    const state = await processVibeDaemonEvent(event, { forceTest: true, triggerId });
     reply.send({ ok: true, state });
   });
 }

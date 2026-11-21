@@ -16,6 +16,7 @@ import {
   setVibeCvConfig,
   getVibeCvStatus,
   captureVibeCvDebug,
+  setVibeCvBackendOrigin,
 } from './vibe-cv/detector.js';
 const _require = createRequire(import.meta.url);
 
@@ -172,52 +173,118 @@ function getBackendOrigin(): string {
 }
 let vibeHotkeySignature = '';
 const vibeHotkeyAccelerators: string[] = [];
+let vibeHotkeyStatus: Record<string, { accelerator: string; ok: boolean; error?: string }> = {};
 
 interface VibeDaemonDesktopConfig {
   enabled: boolean;
   hotkeys?: { kill?: string; death?: string; victory?: string };
 }
 
-async function setupVibeDaemonHotkeys() {
-  if (!backendReady) return;
+function normalizeAccel(accel: string): string {
+  return accel
+    .trim()
+    .toLowerCase()
+    .replace(/\bctrl\b/g, 'commandorcontrol')
+    .replace(/\bcmdorctrl\b/g, 'commandorcontrol')
+    .replace(/\s+/g, '');
+}
+
+async function setupVibeDaemonHotkeys(force = false): Promise<{ registered: typeof vibeHotkeyStatus }> {
+  if (!backendReady) return { registered: vibeHotkeyStatus };
   try {
     const headers = { 'x-local-token': LOCAL_API_TOKEN };
     const statusRes = await fetch(`${getBackendOrigin()}/auth/status`, { headers });
-    if (!statusRes.ok) return;
-    const status = (await statusRes.json()) as { authenticated: boolean; user?: { login?: string } };
-    if (!status.authenticated || !status.user?.login) return;
+    if (!statusRes.ok) return { registered: vibeHotkeyStatus };
+    const status = (await statusRes.json()) as {
+      authenticated?: boolean;
+      user?: { login?: string };
+      twitchUser?: { login?: string };
+      youtubeUser?: { login?: string };
+    };
+    const channel = status.twitchUser?.login || status.user?.login || status.youtubeUser?.login;
+    if (!channel) return { registered: vibeHotkeyStatus };
 
     const configRes = await fetch(`${getBackendOrigin()}/vibe-daemon/config`, { headers });
-    if (!configRes.ok) return;
+    if (!configRes.ok) return { registered: vibeHotkeyStatus };
     const cfg = (await configRes.json()) as VibeDaemonDesktopConfig;
-    if (!cfg.enabled) return;
 
-    const channel = status.user.login;
+    if (!cfg.enabled) {
+      for (const accelerator of vibeHotkeyAccelerators.splice(0)) {
+        globalShortcut.unregister(accelerator);
+      }
+      vibeHotkeySignature = '';
+      vibeHotkeyStatus = {};
+      return { registered: vibeHotkeyStatus };
+    }
+
     const entries = Object.entries(cfg.hotkeys ?? {}) as Array<[string, string]>;
     const signature = `${channel}|${entries.map(([k, v]) => `${k}=${v}`).join(',')}`;
-    if (signature === vibeHotkeySignature) return;
+    if (!force && signature === vibeHotkeySignature) return { registered: vibeHotkeyStatus };
 
     for (const accelerator of vibeHotkeyAccelerators.splice(0)) {
       globalShortcut.unregister(accelerator);
     }
     vibeHotkeySignature = signature;
+    vibeHotkeyStatus = {};
+
+    const seenInVibe = new Set<string>();
+    const reservedGlobal = new Map<string, string>([
+      [normalizeAccel('CommandOrControl+Shift+T'), 'Overlay transparente (Click-Through)'],
+    ]);
 
     for (const [eventType, accelerator] of entries) {
-      if (!accelerator) continue;
-      const registered = globalShortcut.register(accelerator, () => {
-        fetch(`${getBackendOrigin()}/vibe-daemon/event`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-local-token': LOCAL_API_TOKEN },
-          body: JSON.stringify({ channel, gameId: 'global', eventType, timestamp: Date.now() }),
-        }).catch(() => {});
-      });
-      if (registered) vibeHotkeyAccelerators.push(accelerator);
+      if (!accelerator || !accelerator.trim()) continue;
+      const norm = normalizeAccel(accelerator);
+      if (reservedGlobal.has(norm)) {
+        vibeHotkeyStatus[eventType] = {
+          accelerator,
+          ok: false,
+          error: `Conflicto con atajo del software: ${reservedGlobal.get(norm)}`,
+        };
+        continue;
+      }
+      if (seenInVibe.has(norm)) {
+        vibeHotkeyStatus[eventType] = {
+          accelerator,
+          ok: false,
+          error: 'Atajo duplicado en otro evento de Vibe Daemon',
+        };
+        continue;
+      }
+      seenInVibe.add(norm);
+
+      try {
+        const registered = globalShortcut.register(accelerator, () => {
+          fetch(`${getBackendOrigin()}/vibe-daemon/event`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-local-token': LOCAL_API_TOKEN },
+            body: JSON.stringify({ channel, gameId: 'fortnite', eventType, timestamp: Date.now() }),
+          }).catch(() => {});
+        });
+        if (registered) {
+          vibeHotkeyAccelerators.push(accelerator);
+          vibeHotkeyStatus[eventType] = { accelerator, ok: true };
+        } else {
+          vibeHotkeyStatus[eventType] = {
+            accelerator,
+            ok: false,
+            error: 'Ocupado por Windows u otra aplicación',
+          };
+        }
+      } catch {
+        vibeHotkeyStatus[eventType] = {
+          accelerator,
+          ok: false,
+          error: 'Formato de atajo inválido para Electron',
+        };
+      }
     }
     logger.info({ count: vibeHotkeyAccelerators.length }, 'Vibe Daemon hotkeys registered');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.warn({ error: message }, 'Vibe Daemon hotkey setup failed');
   }
+  return { registered: vibeHotkeyStatus };
 }
 
 // ── Main window ───────────────────────────────────────────
@@ -598,6 +665,10 @@ ipcMain.handle('vibe-cv:getConfig', () => getVibeCvConfig());
 ipcMain.handle('vibe-cv:setConfig', (_e, value: VibeCvConfig) => setVibeCvConfig(value));
 ipcMain.handle('vibe-cv:getStatus', () => getVibeCvStatus());
 ipcMain.handle('vibe-cv:captureDebug', () => captureVibeCvDebug());
+
+// Vibe Daemon hotkeys (recarga instantánea + estado de registro)
+ipcMain.handle('vibe-hotkeys:reload', () => setupVibeDaemonHotkeys(true));
+ipcMain.handle('vibe-hotkeys:getStatus', () => ({ registered: vibeHotkeyStatus }));
 
 // Main window — always-on-top toggle
 ipcMain.handle('window:getAlwaysOnTop', () => mainAlwaysOnTop);
@@ -1017,8 +1088,9 @@ function getInitialLoadingHtml(): string {
     loadMainAppUrl(backendPort);
   }
 
+  setVibeCvBackendOrigin(getBackendOrigin());
   setupVibeDaemonHotkeys();
-  setInterval(setupVibeDaemonHotkeys, 60_000);
+  setInterval(() => { void setupVibeDaemonHotkeys(false); }, 60_000);
 
   initVibeCvDetector();
 });

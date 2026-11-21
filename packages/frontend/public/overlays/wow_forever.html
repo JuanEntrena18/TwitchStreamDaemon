@@ -46,6 +46,7 @@
   body.widget-standalone #particles,
   body.widget-standalone .rune-aura,
   body.widget-standalone .corner-crest,
+  body.widget-standalone .wow-forever-logo,
   body.widget-standalone #edit-toolbar {
     display: none !important;
   }
@@ -197,6 +198,36 @@
   .corner-crest.tr { top: 10px; right: 10px; transform: scaleX(-1); }
   .corner-crest.bl { bottom: 72px; left: 10px; transform: scaleY(-1); }
   .corner-crest.br { bottom: 72px; right: 10px; transform: scale(-1, -1); }
+
+  /* Logo oficial WoW: Forever */
+  .wow-forever-logo {
+    position: absolute;
+    top: 52%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 560px;
+    height: auto;
+    opacity: 0.10;
+    pointer-events: none;
+    z-index: 2;
+    filter:
+      drop-shadow(0 0 80px rgba(56, 189, 248, 0.35))
+      drop-shadow(0 0 40px rgba(245, 197, 66, 0.25));
+    animation: logoBreath 7s ease-in-out infinite;
+  }
+  @keyframes logoBreath {
+    0%, 100% { opacity: 0.08; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.12; transform: translate(-50%, -50%) scale(1.02); }
+  }
+
+  .bar-logo {
+    height: 48px;
+    width: auto;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 14px rgba(245, 197, 66, 0.55));
+    margin-right: 8px;
+    margin-left: -6px;
+  }
 
   /* Marco filigrana compartido */
   .wow-frame {
@@ -684,6 +715,9 @@
 
 <canvas id="particles"></canvas>
 
+<!-- Watermark oficial WoW: Forever -->
+<img class="wow-forever-logo" src="wow-forever-logo.png" alt="World of Warcraft: FOREVER">
+
 <!-- Emblemas de esquina -->
 <div class="corner-crest tl">
   <svg viewBox="0 0 64 64" fill="none">
@@ -788,6 +822,7 @@
 
 <!-- 5. Barra Inferior del Reino (info-bar) -->
 <div id="stream-title-bar" data-widget-id="info-bar">
+  <img class="bar-logo" src="wow-forever-logo.png" alt="WoW: FOREVER">
   <div id="live-badge">EN VIVO</div>
   <div id="broadcaster-badge">@<span id="broadcaster-name">Streamer</span></div>
   <div id="game-label">World of Warcraft: FOREVER</div>

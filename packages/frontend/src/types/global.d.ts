@@ -41,12 +41,22 @@ declare global {
     captureDebug: () => Promise<import('@streamdaemon/shared').VibeCvCaptureDebug>;
   }
 
+  interface StreamforgerVibeHotkeysStatus {
+    registered: Record<string, { accelerator: string; ok: boolean; error?: string }>;
+  }
+
+  interface StreamforgerVibeHotkeysAPI {
+    reload: () => Promise<StreamforgerVibeHotkeysStatus>;
+    getStatus: () => Promise<StreamforgerVibeHotkeysStatus>;
+  }
+
   interface StreamforgerAPI {
     isDesktop: boolean;
     backendUrl: string;
     overlay: StreamforgerOverlayAPI;
     backend: StreamforgerBackendAPI;
     vibeCv: StreamforgerVibeCvAPI;
+    vibeHotkeys?: StreamforgerVibeHotkeysAPI;
     window: StreamforgerWindowAPI;
   }
 

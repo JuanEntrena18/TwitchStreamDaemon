@@ -11,9 +11,15 @@ import {
 } from '@streamdaemon/shared';
 import { logger } from '../logger.js';
 
-const BACKEND_ORIGIN = 'http://localhost:3000';
-const CAPTURE_SIZE = { width: 1920, height: 1080 };
+let backendOrigin = 'http://localhost:3000';
+// 640x360 is 9x lighter in RAM/VRAM than 1920x1080 while keeping 85+ px width on HUD bars
+const LIVE_CAPTURE_SIZE = { width: 640, height: 360 };
+const DEBUG_CAPTURE_SIZE = { width: 960, height: 540 };
 const PIXEL_STEP = 2;
+
+export function setVibeCvBackendOrigin(origin: string): void {
+  if (origin) backendOrigin = origin;
+}
 
 const DEFAULT_CONFIG: VibeCvConfig = {
   enabled: false,
@@ -24,17 +30,16 @@ const DEFAULT_CONFIG: VibeCvConfig = {
   healthRoi: { x: 0.055, y: 0.912, w: 0.135, h: 0.022 },
   stormRoi: { x: 0.845, y: 0.115, w: 0.075, h: 0.06 },
   shieldTriggerRatio: 0.12,
-  shieldRecoveryRatio: 0.3,
-  healthTriggerRatio: 0.08,
-  healthRecoveryRatio: 0.25,
-  stormTriggerRatio: 0.02,
-  stormClearRatio: 0.005,
+  shieldRecoveryRatio: 0.25,
+  healthTriggerRatio: 0.15,
+  healthRecoveryRatio: 0.35,
+  stormTriggerRatio: 0.025,
+  stormClearRatio: 0.006,
   consecutiveFrames: 2,
   cooldowns: { lowShieldMs: 15000, lowHealthMs: 20000, stormMs: 30000 },
 };
 
 type PixelClassifier = (r: number, g: number, b: number) => boolean;
-
 type CaptureSource = Awaited<ReturnType<typeof desktopCapturer.getSources>>[number];
 
 interface DetectorMachine {
@@ -43,9 +48,11 @@ interface DetectorMachine {
   lastEmittedAt: number;
 }
 
+// Shield & Health start DISARMED so lobby/desktop/loading screens never trigger false alerts.
+// They arm automatically the moment a live Fortnite HUD bar is detected above recovery ratio.
 const machines: Record<'shield' | 'health' | 'storm', DetectorMachine> = {
-  shield: { armed: true, metCount: 0, lastEmittedAt: 0 },
-  health: { armed: true, metCount: 0, lastEmittedAt: 0 },
+  shield: { armed: false, metCount: 0, lastEmittedAt: 0 },
+  health: { armed: false, metCount: 0, lastEmittedAt: 0 },
   storm: { armed: true, metCount: 0, lastEmittedAt: 0 },
 };
 
@@ -61,6 +68,8 @@ const status: VibeCvStatus = {
 
 let running = false;
 let inFlight = false;
+let sourceMissingBackoff = false;
+let lastHudSeenAt = 0;
 let timer: NodeJS.Timeout | null = null;
 let configState: VibeCvConfig | null = null;
 let channelCache: { channel: string | null; at: number } = { channel: null, at: 0 };
@@ -93,16 +102,17 @@ function getConfig(): VibeCvConfig {
   return configState;
 }
 
+// Calibrated for Fortnite Chapter 5/6/OG HUD colors
 function isShieldPixel(r: number, g: number, b: number): boolean {
-  return b >= 150 && b - r >= 70 && b - g >= 20 && g >= 60;
+  return b >= 135 && b - r >= 55 && g >= 65 && b >= g;
 }
 
 function isHealthPixel(r: number, g: number, b: number): boolean {
-  return g >= 150 && g - r >= 70 && g - b >= 60;
+  return g >= 135 && g - r >= 45 && g - b >= 45;
 }
 
 function isStormPixel(r: number, g: number, b: number): boolean {
-  return r >= 100 && b >= 140 && b - g >= 70 && r - g >= 40;
+  return r >= 100 && b >= 140 && b - g >= 60 && r - g >= 35;
 }
 
 function ratioInRoi(buf: Buffer, width: number, height: number, roi: VibeCvRoi, classify: PixelClassifier): number {
@@ -118,21 +128,22 @@ function ratioInRoi(buf: Buffer, width: number, height: number, roi: VibeCvRoi, 
     for (let x = x0; x <= x1; x += PIXEL_STEP) {
       const i = rowOffset + x * 4;
       samples += 1;
+      // Electron NativeImage.toBitmap() returns BGRA on Windows
       if (classify(buf[i + 2], buf[i + 1], buf[i])) hits += 1;
     }
   }
   return samples > 0 ? hits / samples : 0;
 }
 
-async function pickSource(): Promise<CaptureSource | null> {
+async function pickSource(captureSize: { width: number; height: number }): Promise<CaptureSource | null> {
   const cfg = getConfig();
   if (cfg.sourceType === 'window') {
     const match = cfg.windowTitleMatch.trim().toLowerCase();
     if (!match) return null;
-    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: CAPTURE_SIZE });
+    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: captureSize });
     return sources.find((s) => s.name.toLowerCase().includes(match)) ?? null;
   }
-  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: CAPTURE_SIZE });
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: captureSize });
   if (sources.length === 0) return null;
   try {
     const primaryId = String(screen.getPrimaryDisplay().id);
@@ -146,10 +157,19 @@ async function resolveChannel(force = false): Promise<string | null> {
   const now = Date.now();
   if (!force && channelCache.channel && now - channelCache.at < 60_000) return channelCache.channel;
   try {
-    const res = await fetch(`${BACKEND_ORIGIN}/auth/status`, { headers: { 'x-local-token': apiToken() } });
+    const res = await fetch(`${backendOrigin}/auth/status`, { headers: { 'x-local-token': apiToken() } });
     if (!res.ok) return null;
-    const data = (await res.json()) as { authenticated: boolean; user?: { login?: string } };
-    const channel = data.authenticated && data.user?.login ? data.user.login : null;
+    const data = (await res.json()) as {
+      authenticated?: boolean;
+      user?: { login?: string };
+      twitchUser?: { login?: string };
+      youtubeUser?: { login?: string };
+    };
+    const channel =
+      data.twitchUser?.login ||
+      data.user?.login ||
+      data.youtubeUser?.login ||
+      null;
     channelCache = { channel, at: now };
     return channel;
   } catch {
@@ -160,11 +180,11 @@ async function resolveChannel(force = false): Promise<string | null> {
 async function emitEvent(eventType: 'low_shield' | 'low_health' | 'storm_shrinking', ratio: number): Promise<void> {
   const channel = await resolveChannel();
   if (!channel) {
-    status.lastError = 'Twitch no autenticado';
+    status.lastError = 'Conecta Twitch o YouTube para enviar alertas automáticas';
     return;
   }
   try {
-    const res = await fetch(`${BACKEND_ORIGIN}/vibe-daemon/event`, {
+    const res = await fetch(`${backendOrigin}/vibe-daemon/event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-local-token': apiToken() },
       body: JSON.stringify({
@@ -194,6 +214,11 @@ function stepMachine(
   cooldownMs: number,
   now: number,
 ): boolean {
+  if (rearmCondition) {
+    machine.armed = true;
+    machine.metCount = 0;
+    return false;
+  }
   if (conditionMet) {
     machine.metCount += 1;
     if (
@@ -208,18 +233,19 @@ function stepMachine(
     }
   } else {
     machine.metCount = 0;
-    if (rearmCondition) machine.armed = true;
   }
   return false;
 }
 
 async function analyzeFrame(): Promise<void> {
-  const source = await pickSource();
+  const source = await pickSource(LIVE_CAPTURE_SIZE);
   if (!source) {
+    sourceMissingBackoff = true;
     status.sourceLabel = null;
-    status.lastError = 'Fuente de captura no encontrada';
+    status.lastError = 'Ventana o pantalla de Fortnite no encontrada (en espera)';
     return;
   }
+  sourceMissingBackoff = false;
   status.sourceLabel = source.name;
   const image = source.thumbnail;
   const { width, height } = image.getSize();
@@ -240,20 +266,58 @@ async function analyzeFrame(): Promise<void> {
   status.lastError = null;
 
   const now = Date.now();
-  if (stepMachine(machines.shield, ratios.shield < cfg.shieldTriggerRatio, ratios.shield > cfg.shieldRecoveryRatio, cfg.cooldowns.lowShieldMs, now)) {
+  // Detect whether Fortnite match HUD is actively on-screen
+  const hudVisibleNow = ratios.health > 0.04 || ratios.shield > 0.04;
+  if (hudVisibleNow) {
+    lastHudSeenAt = now;
+  }
+  const inRecentMatch = now - lastHudSeenAt <= 12_000;
+
+  // 1. Low Shield: only triggers if player had shield (> recovery) and lost it WHILE still in match (health visible)
+  if (
+    stepMachine(
+      machines.shield,
+      hudVisibleNow && ratios.shield < cfg.shieldTriggerRatio,
+      ratios.shield >= cfg.shieldRecoveryRatio,
+      cfg.cooldowns.lowShieldMs,
+      now,
+    )
+  ) {
     void emitEvent('low_shield', ratios.shield);
   }
-  if (stepMachine(machines.health, ratios.health < cfg.healthTriggerRatio, ratios.health > cfg.healthRecoveryRatio, cfg.cooldowns.lowHealthMs, now)) {
+
+  // 2. Low Health: only triggers if player had green health (> recovery) and it drops low while still in-match
+  if (
+    stepMachine(
+      machines.health,
+      inRecentMatch && ratios.health < cfg.healthTriggerRatio && (ratios.health > 0.004 || ratios.shield > 0.004),
+      ratios.health >= cfg.healthRecoveryRatio,
+      cfg.cooldowns.lowHealthMs,
+      now,
+    )
+  ) {
     void emitEvent('low_health', ratios.health);
   }
-  if (stepMachine(machines.storm, ratios.storm > cfg.stormTriggerRatio, ratios.storm < cfg.stormClearRatio, cfg.cooldowns.stormMs, now)) {
+
+  // 3. Storm Shrinking: triggers when storm purple indicator appears in storm ROI while in-match
+  if (
+    stepMachine(
+      machines.storm,
+      inRecentMatch && ratios.storm >= cfg.stormTriggerRatio,
+      ratios.storm <= cfg.stormClearRatio,
+      cfg.cooldowns.stormMs,
+      now,
+    )
+  ) {
     void emitEvent('storm_shrinking', ratios.storm);
   }
 }
 
 function scheduleTick(): void {
   if (!running) return;
-  const interval = Math.max(250, Math.round(1000 / getConfig().captureFps));
+  const baseInterval = Math.max(500, Math.round(1000 / Math.min(2, getConfig().captureFps)));
+  // Back off to 4s when Fortnite window isn't open to keep CPU usage near 0%
+  const interval = sourceMissingBackoff ? 4000 : baseInterval;
   timer = setTimeout(() => { void tick(); }, interval);
 }
 
@@ -277,7 +341,8 @@ export function startVibeCvDetector(): void {
   if (!getConfig().enabled) return;
   running = true;
   status.running = true;
-  logger.info({ fps: getConfig().captureFps, sourceType: getConfig().sourceType }, 'Vibe CV detector started');
+  sourceMissingBackoff = false;
+  logger.info({ fps: getConfig().captureFps, sourceType: getConfig().sourceType, size: LIVE_CAPTURE_SIZE }, 'Vibe CV detector started (low-CPU mode)');
   void tick();
 }
 
@@ -311,8 +376,12 @@ export function setVibeCvConfig(next: VibeCvConfig): boolean {
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'No se pudo guardar vibe-cv.json');
   }
-  if (configState.enabled) startVibeCvDetector();
-  else stopVibeCvDetector();
+  if (configState.enabled) {
+    stopVibeCvDetector();
+    startVibeCvDetector();
+  } else {
+    stopVibeCvDetector();
+  }
   return true;
 }
 
@@ -326,7 +395,7 @@ export function getVibeCvStatus(): VibeCvStatus {
 }
 
 export async function captureVibeCvDebug(): Promise<VibeCvCaptureDebug> {
-  const source = await pickSource();
+  const source = await pickSource(DEBUG_CAPTURE_SIZE);
   if (!source) {
     return { dataUrl: null, ratios: { shield: 0, health: 0, storm: 0 }, sourceLabel: null, captureSize: null };
   }

@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('streamforger', {
     captureDebug: () => ipcRenderer.invoke('vibe-cv:captureDebug'),
   },
 
+  vibeHotkeys: {
+    reload: () => ipcRenderer.invoke('vibe-hotkeys:reload'),
+    getStatus: () => ipcRenderer.invoke('vibe-hotkeys:getStatus'),
+  },
+
   window: {
     minimize:       ()           => ipcRenderer.send('window:minimize'),
     close:          ()           => ipcRenderer.send('window:close'),

@@ -19,48 +19,46 @@ function markActivated(trigger: VibeDaemonTrigger): void {
   lastActivationByTrigger.set(trigger.id, Date.now());
 }
 
-function periodMatches(
+function getMetricValue(
   trigger: VibeDaemonTrigger,
   state: VibeDaemonState,
   event: VibeDaemonEvent,
 ): number {
   const period = trigger.condition.period ?? 'session';
+  const metricType = trigger.eventType;
+
+  if (metricType === 'kill_streak') return state.killStreak;
+  if (metricType === 'victory_streak') return state.victoryStreak;
 
   switch (period) {
     case 'session':
-      // Session totals
-      switch (event.eventType) {
+      switch (metricType) {
         case 'kill':
           return state.kills;
         case 'death':
           return state.deaths;
         case 'victory':
           return state.victories;
-        case 'kill_streak':
-          return state.killStreak;
-        case 'victory_streak':
-          return state.victoryStreak;
         default:
-          return event.value ?? 0;
+          return event.value ?? 1;
       }
     case 'match':
     case 'round':
-      // Current match/round totals
-      switch (event.eventType) {
+      switch (metricType) {
         case 'kill':
           return state.currentMatchKills;
         case 'death':
           return state.currentMatchDeaths;
-        case 'kill_streak':
-          return state.killStreak;
+        case 'victory':
+          return state.victories;
         default:
-          return event.value ?? 0;
+          return event.value ?? 1;
       }
     case 'time_window': {
       const windowSeconds = trigger.condition.timeWindowSeconds ?? 60;
       const now = Date.now();
       let lastEventAt: number | null = null;
-      switch (event.eventType) {
+      switch (metricType) {
         case 'kill':
           lastEventAt = state.lastKillAt;
           break;
@@ -71,11 +69,11 @@ function periodMatches(
           lastEventAt = state.lastVictoryAt;
           break;
       }
-      if (!lastEventAt) return 0;
-      return now - lastEventAt <= windowSeconds * 1000 ? event.value ?? 1 : 0;
+      if (!lastEventAt) return 1;
+      return now - lastEventAt <= windowSeconds * 1000 ? (event.value ?? 1) : 0;
     }
     default:
-      return event.value ?? 0;
+      return event.value ?? 1;
   }
 }
 
@@ -87,26 +85,36 @@ export function evaluateTrigger(
   if (!trigger.enabled) return false;
   if (!isCooldownExpired(trigger)) return false;
 
-  // Global triggers apply to all games; game-specific triggers must match the event's game.
-  if (trigger.gameId !== 'global' && trigger.gameId !== event.gameId) return false;
+  const eventGame = normalizeGameId(event.gameId);
+  const triggerGame = normalizeGameId(trigger.gameId);
+  if (triggerGame !== 'global' && triggerGame !== eventGame) return false;
 
-  // For streak events the event type must match exactly.
-  if (trigger.eventType !== event.eventType) {
+  // Allow kill events to automatically evaluate kill_streak triggers,
+  // and victory events to automatically evaluate victory_streak triggers!
+  const directMatch = trigger.eventType === event.eventType;
+  const streakMatch =
+    (event.eventType === 'kill' && trigger.eventType === 'kill_streak') ||
+    (event.eventType === 'victory' && trigger.eventType === 'victory_streak');
+
+  if (!directMatch && !streakMatch) {
     return false;
   }
 
   const condition = trigger.condition;
-  const value = periodMatches(trigger, state, event);
+  const value = getMetricValue(trigger, state, event);
 
   switch (condition.type) {
-    case 'count':
-      return value >= (condition.count ?? 1);
+    case 'count': {
+      const target = Math.max(1, condition.count ?? 1);
+      if (target === 1) return value >= 1;
+      // For streaks (e.g., 5+ kill streak), trigger when reaching target or every multiple
+      if (streakMatch) return value >= target && value % target === 0;
+      return value >= target && value % target === 0;
+    }
     case 'threshold':
       return value >= (condition.threshold ?? 1);
     case 'state':
-      // State events (low_shield, storm_shrinking, ...) carry their own
-      // hysteresis and cooldown in the source (CV detector / integrations):
-      // a matching event means the state holds.
+      // State events (low_shield, low_health, storm_shrinking) carry hysteresis & cooldown in CV detector
       return true;
     default:
       return false;
@@ -117,15 +125,24 @@ export function buildActivation(
   trigger: VibeDaemonTrigger,
   channel: string,
   event: VibeDaemonEvent,
+  state?: VibeDaemonState,
 ): VibeDaemonActivation {
   markActivated(trigger);
+  const action = { ...trigger.action };
+  if (action.message && state) {
+    action.message = action.message
+      .replace(/\{\{kills\}\}/g, String(state.kills))
+      .replace(/\{\{killStreak\}\}/g, String(state.killStreak))
+      .replace(/\{\{victories\}\}/g, String(state.victories))
+      .replace(/\{\{victoryStreak\}\}/g, String(state.victoryStreak));
+  }
   return {
     triggerId: trigger.id,
     triggerName: trigger.name,
-    eventType: event.eventType,
+    eventType: trigger.eventType,
     gameId: trigger.gameId,
-    action: trigger.action,
-    channel,
+    action,
+    channel: channel.toLowerCase(),
     timestamp: Date.now(),
   };
 }
