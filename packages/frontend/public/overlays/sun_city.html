@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamDaemon – Sun City (Miami 80s · Vice Sunset Overlay)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Outfit:wght@400;600;700;800&family=Satisfy&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --dusk:        #130921;
+    --dusk-deep:   #0b0514;
+    --panel:       rgba(19, 9, 33, 0.86);
+    --panel-warm:  rgba(28, 12, 42, 0.90);
+    --flamingo:    #ff4f8b;
+    --sunset:      #ff9642;
+    --gold:        #ffe169;
+    --ocean:       #00e5d4;
+    --ivory:       #fff6eb;
+    --muted:       #d4b8d9;
+    --grad-vice:   linear-gradient(125deg, #ffe169 0%, #ff9642 42%, #ff4f8b 100%);
+    --grad-ocean:  linear-gradient(125deg, #00e5d4 0%, #38bdf8 55%, #ff4f8b 100%);
+    --border-deco: rgba(255, 198, 130, 0.34);
+    --shadow-vice: 0 20px 50px rgba(8, 3, 18, 0.72), 0 0 28px rgba(255, 79, 139, 0.16);
+    --font-display:'Anton', Impact, sans-serif;
+    --font-script: 'Satisfy', cursive;
+    --font-body:   'Outfit', system-ui, sans-serif;
+  }
+
+  html, body {
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: transparent;
+    font-family: var(--font-body);
+    color: var(--ivory);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── STANDALONE WIDGET MODE (?widget=...) ─────────────────────────────── */
+  html.widget-root,
+  body.widget-standalone {
+    width: 100vw !important;
+    height: 100vh !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+  }
+  body.widget-standalone .ambient-horizon,
+  body.widget-standalone .corner-palm,
+  body.widget-standalone #edit-toolbar {
+    display: none !important;
+  }
+  body.widget-standalone [data-widget-id] {
+    display: none !important;
+  }
+  body.widget-standalone [data-widget-id].widget-active {
+    display: flex !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  /* Hidden layers via ?hide=a,b */
+  [data-widget-id].widget-hidden {
+    display: none !important;
+  }
+
+  /* ── DRAG & DROP EDIT MODE (?edit=true) ───────────────────────────────── */
+  body.edit-mode {
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255, 150, 66, 0.18), transparent 45%),
+      radial-gradient(circle at 80% 80%, rgba(255, 79, 139, 0.22), transparent 50%),
+      rgba(11, 5, 20, 0.88);
+  }
+  body.edit-mode [data-widget-id] {
+    cursor: grab !important;
+    pointer-events: auto !important;
+    outline: 2px dashed var(--gold);
+    outline-offset: 6px;
+    transition: outline-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  body.edit-mode [data-widget-id]:hover {
+    outline-color: var(--ocean);
+    box-shadow: 0 0 32px rgba(0, 229, 212, 0.35);
+  }
+  body.edit-mode [data-widget-id].dragging {
+    cursor: grabbing !important;
+    outline: 2px solid var(--ocean);
+    z-index: 999 !important;
+  }
+
+  #edit-toolbar {
+    display: none;
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: rgba(16, 7, 29, 0.94);
+    border: 1.5px solid var(--flamingo);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.78), 0 0 24px rgba(255, 79, 139, 0.3);
+    backdrop-filter: blur(10px);
+  }
+  body.edit-mode #edit-toolbar {
+    display: flex;
+  }
+  .edit-brand {
+    font-family: var(--font-display);
+    font-size: 16px;
+    letter-spacing: 2px;
+    background: var(--grad-vice);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .edit-btn {
+    padding: 6px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 225, 105, 0.45);
+    background: rgba(255, 79, 139, 0.18);
+    color: var(--ivory);
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .edit-btn:hover {
+    background: var(--flamingo);
+    border-color: var(--gold);
+  }
+
+  /* ── SUBTLE AMBIENT MIAMI HORIZON ACCENTS ─────────────────────────────── */
+  .ambient-horizon {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .ambient-horizon::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, transparent 0%, var(--ocean) 18%, var(--gold) 50%, var(--flamingo) 82%, transparent 100%);
+    opacity: 0.85;
+  }
+  .corner-palm {
+    position: absolute;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.22;
+    filter: drop-shadow(0 0 18px rgba(255, 79, 139, 0.35));
+  }
+  .corner-palm.tr {
+    top: 0;
+    right: 0;
+    width: 240px;
+    height: 200px;
+  }
+
+  /* ── ART DECO VICE CARD SURFACE ───────────────────────────────────────── */
+  .vice-card {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border-deco);
+    border-radius: 14px;
+    box-shadow: var(--shadow-vice);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+  }
+  .vice-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--grad-vice);
+  }
+  .vice-card::after {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 225, 105, 0.08);
+    pointer-events: none;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     WIDGET 1: STREAM STATS (data-widget-id="stream-stats")
+     ═══════════════════════════════════════════════════════════════════════ */
+  #w-stream-stats {
+    position: absolute;
+    top: 28px;
+    left: 28px;
+    width: 340px;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+  }
+
+  .card-top-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 8px;
+    border-bottom: 1px solid rgba(255, 225, 105, 0.14);
+  }
+  .deco-kicker {
+    font-family: var(--font-display);
+    font-size: 16px;
+    letter-spacing: 2.2px;
+    background: var(--grad-vice);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .script-tag {
+    font-family: var(--font-script);
+    font-size: 15px;
+    color: var(--ocean);
+    text-shadow: 0 0 12px rgba(0, 229, 212, 0.45);
+  }
+
+  .stats-trio {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 12px 10px 14px;
+    gap: 8px;
+  }
+  .stat-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 6px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 150, 66, 0.16);
+  }
+  .stat-num {
+    font-family: var(--font-display);
+    font-size: 28px;
+    line-height: 1.05;
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ivory);
+  }
+  .stat-num.ocean { color: var(--ocean); text-shadow: 0 0 14px rgba(0, 229, 212, 0.35); }
+  .stat-num.gold  { color: var(--gold);  text-shadow: 0 0 14px rgba(255, 225, 105, 0.35); }
+  .stat-num.pink  { color: var(--flamingo); text-shadow: 0 0 14px rgba(255, 79, 139, 0.35); }
+
+  .stat-lbl {
+    margin-top: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .platform-mini-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 16px 10px;
+    background: rgba(10, 4, 18, 0.45);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .plat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .plat-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     WIDGET 2: SUN CITY SESSION & WANTED HEAT (data-widget-id="career-stats")
+     ═══════════════════════════════════════════════════════════════════════ */
+  #w-career-stats {
+    position: absolute;
+    top: 230px;
+    left: 28px;
+    width: 340px;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+  }
+
+  .sunset-emblem-box {
+    position: relative;
+    padding: 16px 18px 14px;
+    background:
+      radial-gradient(circle at 85% 25%, rgba(255, 225, 105, 0.28), transparent 45%),
+      linear-gradient(160deg, rgba(255, 79, 139, 0.22) 0%, rgba(19, 9, 33, 0.4) 100%);
+    border-bottom: 1px solid rgba(255, 225, 105, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .sun-title-block {
+    display: flex;
+    flex-direction: column;
+  }
+  .sun-city-logo {
+    font-family: var(--font-display);
+    font-size: 32px;
+    line-height: 0.95;
+    letter-spacing: 2px;
+    background: var(--grad-vice);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 3px 0 rgba(11, 5, 20, 0.9));
+  }
+  .sun-city-sub {
+    font-family: var(--font-script);
+    font-size: 18px;
+    color: var(--ocean);
+    margin-top: -2px;
+    text-shadow: 0 0 12px rgba(0, 229, 212, 0.45);
+  }
+
+  /* Classic GTA 5-Star Wanted Heat Meter */
+  .wanted-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 16px;
+    border-bottom: 1px solid rgba(255, 225, 105, 0.1);
+  }
+  .wanted-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .wanted-stars {
+    display: flex;
+    gap: 5px;
+  }
+  .w-star {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.16);
+    transition: all 0.35s ease;
+  }
+  .w-star.lit {
+    color: var(--gold);
+    text-shadow: 0 0 12px rgba(255, 225, 105, 0.8), 0 0 22px rgba(255, 79, 139, 0.45);
+  }
+
+  .session-rows {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px 14px;
+    gap: 9px;
+  }
+  .session-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  .session-key {
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .session-val {
+    font-family: var(--font-display);
+    font-size: 18px;
+    letter-spacing: 1px;
+    color: var(--ivory);
+    font-variant-numeric: tabular-nums;
+  }
+  .session-val.cyan { color: var(--ocean); }
+  .session-val.amber { color: var(--sunset); }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     WIDGET 3: RECENT FOLLOWER POSTCARD (data-widget-id="recent-follow")
+     ═══════════════════════════════════════════════════════════════════════ */
+  #w-recent-follow {
+    position: absolute;
+    bottom: 108px;
+    left: 28px;
+    width: 340px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    z-index: 20;
+  }
+  .rf-emblem {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--grad-vice);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: var(--dusk-deep);
+    box-shadow: 0 6px 18px rgba(255, 79, 139, 0.38);
+    flex-shrink: 0;
+  }
+  .rf-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .rf-kicker {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--ocean);
+  }
+  .rf-name {
+    font-family: var(--font-display);
+    font-size: 23px;
+    letter-spacing: 1px;
+    color: var(--ivory);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     WIDGET 4: SUN CITY LIVE CHAT (data-widget-id="chat")
+     ═══════════════════════════════════════════════════════════════════════ */
+  #w-chat {
+    position: absolute;
+    bottom: 108px;
+    right: 28px;
+    width: 430px;
+    height: 390px;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 14px 14px;
+  }
+  .chat-msg {
+    padding: 8px 11px;
+    border-radius: 9px;
+    background: rgba(12, 5, 22, 0.72);
+    border-left: 3px solid var(--flamingo);
+    font-size: 14px;
+    line-height: 1.38;
+    animation: msg-rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    word-break: break-word;
+  }
+  .chat-msg.yt {
+    border-left-color: #ff2e55;
+  }
+  .chat-msg.tw {
+    border-left-color: #a855f7;
+  }
+  @keyframes msg-rise {
+    from { opacity: 0; transform: translate3d(0, 12px, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  .chat-plat {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .chat-plat.tw { background: rgba(145, 70, 255, 0.28); color: #d8b4fe; }
+  .chat-plat.yt { background: rgba(255, 0, 51, 0.28); color: #fda4af; }
+
+  .chat-user {
+    font-weight: 800;
+    margin-right: 6px;
+    color: var(--gold);
+  }
+  .chat-text {
+    color: var(--ivory);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     WIDGET 5: LOWER-THIRD SUNSET BROADCAST BAR (data-widget-id="info-bar")
+     ═══════════════════════════════════════════════════════════════════════ */
+  #w-info-bar {
+    position: absolute;
+    bottom: 20px;
+    left: 28px;
+    right: 28px;
+    height: 68px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 20px;
+    z-index: 25;
+  }
+
+  .on-air-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: var(--grad-vice);
+    color: var(--dusk-deep);
+    font-family: var(--font-display);
+    font-size: 16px;
+    letter-spacing: 2px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 16px rgba(255, 79, 139, 0.4);
+  }
+  .on-air-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dusk-deep);
+    animation: pulse-live 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .bar-handle {
+    font-family: var(--font-display);
+    font-size: 22px;
+    letter-spacing: 1.5px;
+    color: var(--ivory);
+    flex-shrink: 0;
+  }
+  .bar-divider {
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(180deg, var(--gold), var(--flamingo));
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .bar-game {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--ocean);
+    flex-shrink: 0;
+  }
+  .bar-title {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ivory);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bar-radio {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .bar-station {
+    font-family: var(--font-script);
+    font-size: 18px;
+    color: var(--gold);
+  }
+  .bar-clock {
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: 1.5px;
+    color: var(--ocean);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     WIDGET 6: GTA VI SUNSET POSTCARD ALERTS (data-widget-id="alerts")
+     ═══════════════════════════════════════════════════════════════════════ */
+  #w-alerts {
+    position: absolute;
+    top: 38px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 820px;
+    min-height: 170px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 60;
+  }
+
+  .vice-alert-banner {
+    position: relative;
+    width: 740px;
+    padding: 22px 34px;
+    border-radius: 16px;
+    background:
+      radial-gradient(circle at 90% 15%, rgba(255, 225, 105, 0.35), transparent 48%),
+      radial-gradient(circle at 12% 85%, rgba(0, 229, 212, 0.25), transparent 45%),
+      linear-gradient(130deg, rgba(24, 10, 44, 0.95) 0%, rgba(46, 13, 56, 0.94) 55%, rgba(20, 8, 34, 0.96) 100%);
+    border: 2px solid var(--gold);
+    box-shadow:
+      0 24px 64px rgba(0, 0, 0, 0.78),
+      0 0 42px rgba(255, 79, 139, 0.36);
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    will-change: transform, opacity;
+    animation: alert-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    overflow: hidden;
+  }
+  .vice-alert-banner::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: var(--grad-vice);
+  }
+  .vice-alert-banner.out {
+    animation: alert-out 0.42s ease-in forwards;
+  }
+  @keyframes alert-in {
+    0%   { opacity: 0; transform: translate3d(0, -34px, 0) scale(0.9); }
+    100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  }
+  @keyframes alert-out {
+    0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+    100% { opacity: 0; transform: translate3d(0, -24px, 0) scale(0.94); }
+  }
+
+  .alert-badge-box {
+    width: 78px;
+    height: 78px;
+    border-radius: 14px;
+    background: var(--grad-vice);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    color: var(--dusk-deep);
+    box-shadow: 0 10px 26px rgba(255, 79, 139, 0.45);
+    flex-shrink: 0;
+  }
+  .alert-text-col {
+    flex: 1;
+    min-width: 0;
+  }
+  .alert-kicker {
+    font-family: var(--font-script);
+    font-size: 22px;
+    color: var(--ocean);
+    line-height: 1.05;
+    text-shadow: 0 0 14px rgba(0, 229, 212, 0.5);
+  }
+  .alert-actor {
+    font-family: var(--font-display);
+    font-size: 44px;
+    line-height: 1.02;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    background: var(--grad-vice);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .alert-sub {
+    margin-top: 3px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ivory);
+  }
+</style>
+</head>
+<body>
+
+  <!-- Ambient Miami Sunset Horizon & Palm Silhouette -->
+  <div class="ambient-horizon"></div>
+  <svg class="corner-palm tr" viewBox="0 0 240 200" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M240 0 C205 26 178 46 150 68 C172 60 198 54 222 52 C192 70 165 88 136 112 C164 100 192 94 218 95 C186 115 162 138 148 168 C178 144 206 126 240 116 V0 Z" fill="url(#palmGrad)" />
+    <defs>
+      <linearGradient id="palmGrad" x1="136" y1="0" x2="240" y2="168" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#ffe169"/>
+        <stop offset="0.5" stop-color="#ff9642"/>
+        <stop offset="1" stop-color="#ff4f8b"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <!-- Drag & Drop Toolbar (?edit=true) -->
+  <div id="edit-toolbar">
+    <span class="edit-brand">SUN CITY · EDITOR</span>
+    <button type="button" class="edit-btn" id="btn-test-alert">🌴 Probar alerta</button>
+    <button type="button" class="edit-btn" id="btn-reset-pos">↺ Restablecer</button>
+  </div>
+
+  <!-- 1. STREAM STATS (stream-stats) -->
+  <section id="w-stream-stats" class="vice-card" data-widget-id="stream-stats">
+    <div class="card-top-strip">
+      <span class="deco-kicker">TELEMETRÍA</span>
+      <span class="script-tag">Ocean Drive</span>
+    </div>
+    <div class="stats-trio">
+      <div class="stat-cell">
+        <span class="stat-num ocean" id="val-viewers">0</span>
+        <span class="stat-lbl">Viewers</span>
+      </div>
+      <div class="stat-cell">
+        <span class="stat-num gold" id="val-followers">0</span>
+        <span class="stat-lbl">Comunidad</span>
+      </div>
+      <div class="stat-cell">
+        <span class="stat-num pink" id="val-subs">0</span>
+        <span class="stat-lbl">Subs</span>
+      </div>
+    </div>
+    <div class="platform-mini-bar">
+      <span class="plat-pill"><span class="plat-dot" style="background:#a855f7"></span>TW <span id="val-tw-v">0</span></span>
+      <span class="plat-pill"><span class="plat-dot" style="background:#ff2e55"></span>YT <span id="val-yt-v">0</span></span>
+      <span style="color:var(--gold)">SUN CITY LIVE</span>
+    </div>
+  </section>
+
+  <!-- 2. SUN CITY SESSION & WANTED HEAT (career-stats) -->
+  <section id="w-career-stats" class="vice-card" data-widget-id="career-stats">
+    <div class="sunset-emblem-box">
+      <div class="sun-title-block">
+        <span class="sun-city-logo">SUN CITY</span>
+        <span class="sun-city-sub">Leonida Nights</span>
+      </div>
+      <svg width="56" height="56" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <circle cx="32" cy="34" r="22" fill="url(#sunDisc)"/>
+        <rect x="8" y="38" width="48" height="3" fill="#130921"/>
+        <rect x="8" y="44" width="48" height="3.5" fill="#130921"/>
+        <rect x="8" y="51" width="48" height="4" fill="#130921"/>
+        <defs>
+          <linearGradient id="sunDisc" x1="32" y1="12" x2="32" y2="56" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#ffe169"/>
+            <stop offset="0.55" stop-color="#ff9642"/>
+            <stop offset="1" stop-color="#ff4f8b"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+
+    <div class="wanted-row">
+      <span class="wanted-label">Nivel de Hype</span>
+      <div class="wanted-stars" id="wanted-stars">
+        <span class="w-star lit">★</span>
+        <span class="w-star lit">★</span>
+        <span class="w-star">★</span>
+        <span class="w-star">★</span>
+        <span class="w-star">★</span>
+      </div>
+    </div>
+
+    <div class="session-rows">
+      <div class="session-row">
+        <span class="session-key">Tiempo en el aire</span>
+        <span class="session-val cyan" id="val-uptime">00:00:00</span>
+      </div>
+      <div class="session-row">
+        <span class="session-key">Distrito</span>
+        <span class="session-val amber" id="val-district">VICE BEACH</span>
+      </div>
+      <div class="session-row">
+        <span class="session-key">Último VIP / Sub</span>
+        <span class="session-val" id="val-last-sub" style="font-size:15px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Esperando…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. RECENT FOLLOWER POSTCARD (recent-follow) -->
+  <section id="w-recent-follow" class="vice-card" data-widget-id="recent-follow">
+    <div class="rf-emblem">🌴</div>
+    <div class="rf-body">
+      <span class="rf-kicker">Nuevo en Sun City</span>
+      <span class="rf-name" id="val-last-follow">Esperando…</span>
+    </div>
+  </section>
+
+  <!-- 4. DUAL-PLATFORM LIVE CHAT (chat) -->
+  <section id="w-chat" class="vice-card" data-widget-id="chat">
+    <div class="card-top-strip">
+      <span class="deco-kicker">RADIO CHAT</span>
+      <span class="script-tag">98.6 FM</span>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+  </section>
+
+  <!-- 5. LOWER-THIRD SUNSET BROADCAST BAR (info-bar) -->
+  <footer id="w-info-bar" class="vice-card" data-widget-id="info-bar">
+    <div class="on-air-pill">
+      <span class="on-air-dot"></span>
+      <span id="live-label">ON AIR</span>
+    </div>
+    <span class="bar-handle" id="broadcaster-handle">@STREAMER</span>
+    <span class="bar-divider"></span>
+    <span class="bar-game" id="stream-game">GRAND THEFT AUTO VI</span>
+    <span class="bar-title" id="stream-title">Explorando las noches de Sun City · Directo Multistream</span>
+    <div class="bar-radio">
+      <span class="bar-station">Sun City FM</span>
+      <span class="bar-clock" id="vice-clock">00:00</span>
+    </div>
+  </footer>
+
+  <!-- 6. ALERTS ZONE (alerts) -->
+  <div id="w-alerts" data-widget-id="alerts"></div>
+
+<script src="./js/sd-layout.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var PARAMS       = new URLSearchParams(location.search);
+  var CHANNEL      = (PARAMS.get('channel') || 'streamer').toLowerCase();
+  var BACKEND_URL  = (PARAMS.get('backend') || 'http://localhost:3000').replace(/\/+$/, '');
+  var DEMO_MODE    = PARAMS.get('demo') === 'true';
+  var EDIT_MODE    = PARAMS.get('edit') === 'true' || PARAMS.get('interactive') === 'true';
+  var WIDGET_ONLY  = PARAMS.get('widget') || PARAMS.get('only') || '';
+  var HIDE_LAYERS  = (PARAMS.get('hide') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+
+  document.getElementById('broadcaster-handle').textContent = '@' + CHANNEL.toUpperCase();
+
+  // ── 1. Modular Widget Separation (?widget=...) & Layer Hide (?hide=...) ──
+  if (WIDGET_ONLY) {
+    document.documentElement.classList.add('widget-root');
+    document.body.classList.add('widget-standalone');
+    var active = document.querySelector('[data-widget-id="' + WIDGET_ONLY + '"]');
+    if (active) active.classList.add('widget-active');
+  } else {
+    HIDE_LAYERS.forEach(function (id) {
+      var el = document.querySelector('[data-widget-id="' + id + '"]');
+      if (el) el.classList.add('widget-hidden');
+    });
+  }
+
+  // ── 2. Drag & Drop Editor via SDLayout ────────────────────────────────────
+  function initDragAndDrop() {
+    if (WIDGET_ONLY) return;
+    if (window.SDLayout) {
+      window.SDLayout.init({ overlayId: 'sun_city', channel: CHANNEL, backend: BACKEND_URL, edit: EDIT_MODE });
+    }
+    if (!EDIT_MODE) return;
+
+    document.body.classList.add('edit-mode');
+    if (window.SDLayout) window.SDLayout.mountToolbar();
+
+    document.getElementById('btn-test-alert').addEventListener('click', function () {
+      enqueueAlert({
+        kicker: '¡Nuevo VIP en Ocean Drive!',
+        actor: 'Lucia_Vice86',
+        sub: 'Se ha suscrito al canal · Nivel Sunset',
+        icon: '🌴',
+      });
+    });
+
+    document.getElementById('btn-reset-pos').addEventListener('click', function () {
+      if (window.SDLayout) window.SDLayout.reset().then(function () { location.reload(); });
+    });
+
+    document.querySelectorAll('[data-widget-id]').forEach(function (el) {
+      var dragging = false;
+      var startX = 0, startY = 0, origLeft = 0, origTop = 0;
+
+      el.addEventListener('pointerdown', function (e) {
+        if (e.button !== 0) return;
+        dragging = true;
+        el.classList.add('dragging');
+        var rect = el.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        origLeft = rect.left;
+        origTop = rect.top;
+        el.style.left = origLeft + 'px';
+        el.style.top = origTop + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.transform = 'none';
+        el.setPointerCapture(e.pointerId);
+      });
+
+      el.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        var nextLeft = origLeft + (e.clientX - startX);
+        var nextTop = origTop + (e.clientY - startY);
+        el.style.left = Math.round(nextLeft) + 'px';
+        el.style.top = Math.round(nextTop) + 'px';
+      });
+
+      function endDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        el.classList.remove('dragging');
+        try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+        var wid = el.getAttribute('data-widget-id');
+        if (wid && window.SDLayout) {
+          window.SDLayout.setPosition(wid, parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0);
+        }
+      }
+      el.addEventListener('pointerup', endDrag);
+      el.addEventListener('pointercancel', endDrag);
+    });
+  }
+
+  // ── 3. Clock & Uptime Formatting ──────────────────────────────────────────
+  function updateClock() {
+    var d = new Date();
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    document.getElementById('vice-clock').textContent = hh + ':' + mm;
+  }
+  updateClock();
+  setInterval(updateClock, 15000);
+
+  function fmtNum(n) {
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 10000) return (n / 1000).toFixed(1) + 'K';
+    return n.toLocaleString('es-ES');
+  }
+
+  function fmtUptime(sec) {
+    sec = Math.max(0, Math.floor(Number(sec) || 0));
+    var h = String(Math.floor(sec / 3600)).padStart(2, '0');
+    var m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+    var s = String(sec % 60).padStart(2, '0');
+    return h + ':' + m + ':' + s;
+  }
+
+  function updateWantedStars(viewers) {
+    var stars = viewers >= 500 ? 5 : viewers >= 150 ? 4 : viewers >= 50 ? 3 : viewers >= 10 ? 2 : 1;
+    var nodes = document.querySelectorAll('#wanted-stars .w-star');
+    nodes.forEach(function (node, idx) {
+      if (idx < stars) node.classList.add('lit');
+      else node.classList.remove('lit');
+    });
+  }
+
+  function applyHud(data) {
+    if (!data) return;
+    var viewers = data.viewers || 0;
+    document.getElementById('val-viewers').textContent = fmtNum(viewers);
+    document.getElementById('val-followers').textContent = fmtNum(data.followers || 0);
+    document.getElementById('val-subs').textContent = fmtNum(data.subscribers || 0);
+    document.getElementById('val-uptime').textContent = fmtUptime(data.uptimeSeconds || 0);
+
+    var twV = data.platformBreakdown && data.platformBreakdown.twitch ? data.platformBreakdown.twitch.viewers : (data.platform !== 'youtube' ? viewers : 0);
+    var ytV = data.platformBreakdown && data.platformBreakdown.youtube ? data.platformBreakdown.youtube.viewers : (data.platform === 'youtube' ? viewers : 0);
+    document.getElementById('val-tw-v').textContent = fmtNum(twV);
+    document.getElementById('val-yt-v').textContent = fmtNum(ytV);
+
+    if (data.streamTitle) document.getElementById('stream-title').textContent = data.streamTitle;
+    if (data.gameName) document.getElementById('stream-game').textContent = data.gameName.toUpperCase();
+    if (data.lastFollower) document.getElementById('val-last-follow').textContent = data.lastFollower;
+    if (data.lastSubscriber) document.getElementById('val-last-sub').textContent = data.lastSubscriber;
+    document.getElementById('live-label').textContent = data.isLive ? 'ON AIR' : 'STANDBY';
+    updateWantedStars(viewers);
+  }
+
+  // ── 4. Chat Renderer (Twitch + YouTube) ───────────────────────────────────
+  var chatBox = document.getElementById('chat-messages');
+  function pushChat(msg) {
+    if (!msg || !msg.text) return;
+    var isYt = msg.platform === 'youtube';
+    var row = document.createElement('div');
+    row.className = 'chat-msg ' + (isYt ? 'yt' : 'tw');
+
+    var plat = document.createElement('span');
+    plat.className = 'chat-plat ' + (isYt ? 'yt' : 'tw');
+    plat.textContent = isYt ? 'YT' : 'TW';
+
+    var user = document.createElement('span');
+    user.className = 'chat-user';
+    user.textContent = (msg.user && (msg.user.displayName || msg.user.username)) || 'Viewer';
+    if (msg.user && msg.user.color) user.style.color = msg.user.color;
+
+    var txt = document.createElement('span');
+    txt.className = 'chat-text';
+    txt.textContent = msg.text;
+
+    row.appendChild(plat);
+    row.appendChild(user);
+    row.appendChild(txt);
+    chatBox.appendChild(row);
+    while (chatBox.children.length > 9) {
+      chatBox.removeChild(chatBox.firstChild);
+    }
+  }
+
+  // ── 5. Alert Queue ────────────────────────────────────────────────────────
+  var alertZone = document.getElementById('w-alerts');
+  var alertQueue = [];
+  var alertBusy = false;
+
+  function enqueueAlert(item) {
+    alertQueue.push(item);
+    if (!alertBusy) nextAlert();
+  }
+
+  function nextAlert() {
+    if (alertQueue.length === 0) {
+      alertBusy = false;
+      return;
+    }
+    alertBusy = true;
+    var item = alertQueue.shift();
+
+    var card = document.createElement('div');
+    card.className = 'vice-alert-banner';
+
+    var badge = document.createElement('div');
+    badge.className = 'alert-badge-box';
+    badge.textContent = item.icon || '🌴';
+
+    var col = document.createElement('div');
+    col.className = 'alert-text-col';
+
+    var kicker = document.createElement('div');
+    kicker.className = 'alert-kicker';
+    kicker.textContent = item.kicker || 'Sun City Alert';
+
+    var actor = document.createElement('div');
+    actor.className = 'alert-actor';
+    actor.textContent = item.actor || 'Viewer';
+
+    var sub = document.createElement('div');
+    sub.className = 'alert-sub';
+    sub.textContent = item.sub || '';
+
+    col.appendChild(kicker);
+    col.appendChild(actor);
+    col.appendChild(sub);
+    card.appendChild(badge);
+    card.appendChild(col);
+
+    alertZone.innerHTML = '';
+    alertZone.appendChild(card);
+
+    setTimeout(function () {
+      card.classList.add('out');
+      setTimeout(function () {
+        alertZone.innerHTML = '';
+        nextAlert();
+      }, 450);
+    }, 4400);
+  }
+
+  // ── 6. Socket.IO Live Connection ──────────────────────────────────────────
+  function initSocket() {
+    if (typeof window.io !== 'function') return;
+    var socket = window.io(BACKEND_URL, { transports: ['websocket'] });
+
+    socket.on('connect', function () {
+      socket.emit('join:channel', 'global');
+      if (CHANNEL) socket.emit('join:channel', CHANNEL);
+    });
+
+    socket.on('hud:update', applyHud);
+    socket.on('chat:message', pushChat);
+
+    socket.on('channel:follow', function (d) {
+      var name = d.userDisplayName || d.userName || 'Nuevo Viewer';
+      document.getElementById('val-last-follow').textContent = name;
+      enqueueAlert({
+        kicker: d.platform === 'youtube' ? 'Nuevo Suscriptor en YouTube' : 'Nuevo en Sun City',
+        actor: name,
+        sub: d.platform === 'youtube' ? 'Se ha suscrito al canal de YouTube' : 'Acaba de seguir el directo',
+        icon: '🌴',
+      });
+    });
+
+    socket.on('channel:subscribe', function (d) {
+      var name = d.userDisplayName || d.userName || 'VIP';
+      document.getElementById('val-last-sub').textContent = name;
+      enqueueAlert({
+        kicker: d.platform === 'youtube' ? 'Nuevo Miembro VIP · YouTube' : '¡Suscripción Sunset VIP!',
+        actor: name,
+        sub: 'Bienvenido al club privado de Ocean Drive',
+        icon: '⭐',
+      });
+    });
+
+    socket.on('channel:subgift', function (d) {
+      enqueueAlert({
+        kicker: '¡Lluvia de Pase VIP!',
+        actor: d.gifterDisplayName || 'Anónimo',
+        sub: 'Ha regalado ' + (d.amount || 1) + ' suscripciones en Sun City',
+        icon: '🎁',
+      });
+    });
+
+    socket.on('channel:cheer', function (d) {
+      enqueueAlert({
+        kicker: d.platform === 'youtube' ? 'Super Chat · Sun City' : '¡Propina de Bits!',
+        actor: d.userDisplayName || 'Viewer',
+        sub: (d.formattedAmount || (d.bits + ' bits')) + (d.message ? ' — ' + d.message : ''),
+        icon: '💎',
+      });
+    });
+
+    socket.on('channel:raid', function (d) {
+      enqueueAlert({
+        kicker: '¡Invasión en Leonida!',
+        actor: d.fromDisplayName || d.fromChannel || 'Raider',
+        sub: 'Llega con ' + (d.viewerCount || 0) + ' espectadores a Sun City',
+        icon: '🚗',
+      });
+    });
+
+    // Initial HTTP HUD fetch
+    fetch(BACKEND_URL + '/hud/' + encodeURIComponent(CHANNEL))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) applyHud(d); })
+      .catch(function () {});
+  }
+
+  // ── 7. Demo Mode (?demo=true) ─────────────────────────────────────────────
+  function startDemo() {
+    applyHud({
+      viewers: 428,
+      followers: 18450,
+      subscribers: 312,
+      uptimeSeconds: 7845,
+      streamTitle: 'Noches de Leonida · Explorando Sun City al Atardecer',
+      gameName: 'Grand Theft Auto VI',
+      isLive: true,
+      lastFollower: 'Jason_Leonida',
+      lastSubscriber: 'Lucia_Vice86',
+      platformBreakdown: {
+        twitch: { viewers: 294 },
+        youtube: { viewers: 134 },
+      },
+    });
+
+    var demoMsgs = [
+      { platform: 'twitch', user: { displayName: 'ViceCruiser', color: '#ffe169' }, text: '¡Ese atardecer en Ocean Drive es increíble! 🌴🔥' },
+      { platform: 'youtube', user: { displayName: 'Miami86_YT', color: '#00e5d4' }, text: 'Saludos desde YouTube Live, qué pedazo de overlay!' },
+      { platform: 'twitch', user: { displayName: 'LuciaRun', color: '#ff4f8b' }, text: 'Sube la radio Sun City FM 98.6 📻✨' },
+      { platform: 'youtube', user: { displayName: 'NeonFlamingo', color: '#ff9642' }, text: '5 estrellas de hype hoy en el directo ⭐⭐⭐⭐⭐' },
+    ];
+    demoMsgs.forEach(function (m, i) {
+      setTimeout(function () { pushChat(m); }, 500 + i * 900);
+    });
+
+    setTimeout(function () {
+      enqueueAlert({
+        kicker: '¡Nuevo VIP en Ocean Drive!',
+        actor: 'Lucia_Vice86',
+        sub: 'Se ha suscrito al canal · Bienvenida a Sun City 🌴',
+        icon: '⭐',
+      });
+    }, 1800);
+  }
+
+  initDragAndDrop();
+
+  var script = document.createElement('script');
+  script.src = './js/socket.io.js';
+  script.onload = function () {
+    initSocket();
+    if (DEMO_MODE) startDemo();
+  };
+  script.onerror = function () {
+    if (DEMO_MODE) startDemo();
+  };
+  document.head.appendChild(script);
+})();
+</script>
+</body>
+</html>

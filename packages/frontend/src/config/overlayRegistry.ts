@@ -1,4 +1,4 @@
-export type OverlayCategory = 'general' | 'dj' | '8bits' | 'win95' | 'retrowave' | 'tactical' | 'wow-alliance' | 'wow-horde' | 'wow-forever' | 'valorant' | 'cyberpunk' | 'extraction';
+export type OverlayCategory = 'general' | 'dj' | '8bits' | 'win95' | 'retrowave' | 'tactical' | 'wow-alliance' | 'wow-horde' | 'wow-forever' | 'valorant' | 'sun-city' | 'cyberpunk' | 'extraction';
 
 export interface OverlayEntry {
   id: string;
@@ -33,6 +33,7 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: 'wow-horde',    labelKey: 'obs.catHorde',       icon: '🔴', color: '#ff2222', themeId: 'wow' },
   { id: 'wow-forever',  labelKey: 'obs.catWowForever',  icon: '⚜️', color: '#f5c542', themeId: 'wow-forever' },
   { id: 'valorant',     labelKey: 'obs.catValorant',    icon: '🎯', color: '#ff4655', themeId: 'valorant' },
+  { id: 'sun-city',     labelKey: 'obs.catSunCity',     icon: '🌴', color: '#ff4f8b', themeId: 'sun-city' },
   { id: 'cyberpunk',    labelKey: 'obs.catCyberpunk',   icon: '🌆', color: '#ff003c', themeId: 'cyberpunk' },
   { id: 'extraction',   labelKey: 'obs.catExtraction',  icon: '🎯', color: '#ff6b00', themeId: 'extraction' },
 ];
@@ -151,6 +152,9 @@ export const OVERLAY_REGISTRY: OverlayEntry[] = [
 
   // ── VALORANT Protocol (Modular) ──
   { id: 'valorant-protocol',           icon: '🎯', labelKey: 'obs.valorantProtocol',         descKey: 'obs.valorantProtocolDesc',       mode: 'valorant-protocol',           supportsTheme: false, color: '#ff4655', filename: 'valorant_protocol.html',                        category: 'valorant', orientation: 'horizontal', isNew: true },
+
+  // ── Sun City · Miami 80s / GTA VI Sunset (Modular) ──
+  { id: 'sun-city',                    icon: '🌴', labelKey: 'obs.sunCity',                  descKey: 'obs.sunCityDesc',                mode: 'sun-city',                    supportsTheme: false, color: '#ff4f8b', filename: 'sun_city.html',                                 category: 'sun-city', orientation: 'horizontal', isNew: true },
 
   // ── Vertical (1080×1920) ──
   { id: 'fortnite-vertical',         icon: '📱', labelKey: 'obs.fortniteVertical',     descKey: 'obs.fortniteVerticalDesc',     mode: 'fortnite-vertical',         supportsTheme: false, color: '#00D4FF', filename: 'fortnite-vertical.html',                     category: 'general', orientation: 'vertical' },

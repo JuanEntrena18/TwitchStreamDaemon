@@ -114,6 +114,7 @@ const THEMES: ThemeDescriptor[] = [
   { id: '',            labelKey: 'obs.sinTema',        color: '#8b5cf6', tag: 'Core & Widgets' },
   { id: 'wow-forever', labelKey: 'obs.temaWowForever', color: '#f5c542', tag: 'Azeroth Eterno' },
   { id: 'valorant',    labelKey: 'obs.temaValorant',   color: '#ff4655', tag: 'Radiant Protocol' },
+  { id: 'sun-city',    labelKey: 'obs.temaSunCity',    color: '#ff4f8b', tag: 'Vice Sunset 80s' },
   { id: 'cyberpunk',   labelKey: 'obs.temaCyberpunk',  color: '#ff003c', tag: 'Neon Glitch' },
   { id: 'fortnite',    labelKey: 'obs.temaFortnite',   color: '#00d4ff', tag: 'Battle Royale' },
   { id: 'extraction', labelKey: 'obs.temaExtraction', color: '#ff6b00', tag: 'Raid & Comms' },
@@ -158,6 +159,15 @@ function ThemeArtwork({ themeId }: { themeId: string }) {
           <polygon points="14 2.5 23.5 8 23.5 20 14 25.5 4.5 20 4.5 8" fill="currentColor" fillOpacity="0.16" />
           <path d="M14 5.5v17M9.5 10l4.5-3 4.5 3M9.5 18l4.5 3 4.5-3" />
           <circle cx="14" cy="14" r="2.6" fill="currentColor" />
+        </svg>
+      );
+    case 'sun-city':
+      return (
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="14" cy="14" r="7.5" fill="currentColor" fillOpacity="0.22" />
+          <line x1="4" y1="18" x2="24" y2="18" />
+          <line x1="7" y1="21.5" x2="21" y2="21.5" />
+          <path d="M14 25v-9M14 16c-2-3-5-4-8-3M14 16c2-3 5-4 8-3M14 16c-1-3.5-3-6-5.5-7M14 16c1-3.5 3-6 5.5-7" />
         </svg>
       );
     case 'valorant':
@@ -391,7 +401,7 @@ function matchThemeItem(item: OverlayEntry, themeId: string): boolean {
   return Boolean(cat && cat.themeId === themeId);
 }
 
-const MODULAR_OVERLAY_IDS = new Set(['fortnite', 'fortnite-hud-api', 'wow-forever', 'valorant-protocol']);
+const MODULAR_OVERLAY_IDS = new Set(['fortnite', 'fortnite-hud-api', 'wow-forever', 'valorant-protocol', 'sun-city']);
 
 export function ObsPanel({ channel }: Props) {
   const { t } = useTranslation();
